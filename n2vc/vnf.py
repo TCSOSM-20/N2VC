@@ -297,7 +297,7 @@ class N2VC:
         ########################################
         app = await self.get_application(model, application_name)
         if app:
-            raise JujuApplicationExists("Can't deploy application \"{}\" to model \"{}\" because it already exists.".format(application_name, model))
+            raise JujuApplicationExists("Can't deploy application \"{}\" to model \"{}\" because it already exists.".format(application_name, model_name))
 
         ################################################################
         # Register this application with the model-level event monitor #
@@ -375,10 +375,14 @@ class N2VC:
                 else:
                     seq = primitive['seq']
 
+                    params = {}
+                    if 'parameter' in primitive:
+                        params = primitive['parameter']
+
                     primitives[seq] = {
                         'name': primitive['name'],
                         'parameters': self._map_primitive_parameters(
-                            primitive['parameter'],
+                            params,
                             {'<rw_mgmt_ip>': rw_mgmt_ip}
                         ),
                     }
