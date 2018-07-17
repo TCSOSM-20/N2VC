@@ -397,7 +397,7 @@ class N2VC:
                             **primitives[primitive]['parameters'],
                         )
             except N2VCPrimitiveExecutionFailed as e:
-                self.debug.log(
+                self.log.debug(
                     "[N2VC] Exception executing primitive: {}".format(e)
                 )
                 raise
@@ -447,7 +447,7 @@ class N2VC:
                 await model.disconnect()
         except Exception as e:
             self.log.debug("Caught exception while executing primitive: {}".format(e))
-            raise e
+            raise N2VCPrimitiveExecutionFailed(e)
         return uuid
 
     async def RemoveCharms(self, model_name, application_name, callback=None, *callback_args):
