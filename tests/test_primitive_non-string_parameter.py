@@ -89,20 +89,25 @@ vnfd:vnfd-catalog:
                     name: config
                     parameter:
                     -   name: ssh-hostname
+                        data-type: STRING
                         value: <rw_mgmt_ip>
                     -   name: ssh-username
+                        data-type: STRING
                         value: ubuntu
                     -   name: ssh-password
+                        data-type: STRING
                         value: ubuntu
                 -   seq: '2'
                     name: touch
                     parameter:
                     -   name: filename
+                        data-type: STRING
                         value: '/home/ubuntu/first-touch-dataVM'
                 -   seq: '3'
                     name: testint
                     parameter:
                     -   name: interval
+                        data-type: INTEGER
                         value: 20
                 config-primitive:
                 -   name: touch
