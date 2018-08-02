@@ -1,6 +1,8 @@
 import inspect
 import subprocess
 import uuid
+from contextlib import contextmanager
+from pathlib import Path
 
 import mock
 from juju.client.jujudata import FileJujuData
@@ -10,10 +12,14 @@ import pytest
 
 
 def is_bootstrapped():
-    result = subprocess.run(['juju', 'switch'], stdout=subprocess.PIPE)
-    return (
-        result.returncode == 0 and
-        len(result.stdout.decode().strip()) > 0)
+    try:
+        result = subprocess.run(['juju', 'switch'], stdout=subprocess.PIPE)
+        return (
+            result.returncode == 0 and
+            len(result.stdout.decode().strip()) > 0)
+    except FileNotFoundError:
+        return False
+
 
 
 bootstrapped = pytest.mark.skipif(
@@ -24,6 +30,13 @@ test_run_nonce = uuid.uuid4().hex[-4:]
 
 
 class CleanController():
+    """
+    Context manager that automatically connects and disconnects from
+    the currently active controller.
+
+    Note: Unlike CleanModel, this will not create a new controller for you,
+    and an active controller must already be available.
+    """
     def __init__(self):
         self._controller = None
 
@@ -37,6 +50,14 @@ class CleanController():
 
 
 class CleanModel():
+    """
+    Context manager that automatically connects to the currently active
+    controller, adds a fresh model, returns the connection to that model,
+    and automatically disconnects and cleans up the model.
+
+    The new model is also set as the current default for the controller
+    connection.
+    """
     def __init__(self, bakery_client=None):
         self._controller = None
         self._model = None
@@ -77,14 +98,6 @@ class CleanModel():
 
         return self._model
 
-    def _models(self):
-        result = self._orig_models()
-        models = result[self.controller_name]['models']
-        full_model_name = '{}/{}'.format(self.user_name, self.model_name)
-        if full_model_name not in models:
-            models[full_model_name] = {'uuid': self.model_uuid}
-        return result
-
     async def __aexit__(self, exc_type, exc, tb):
         await self._model.disconnect()
         await self._controller.destroy_model(self._model_uuid)
@@ -115,9 +128,22 @@ class TestJujuData(FileJujuData):
         cmodels = all_models[self.__controller_name]['models']
         cmodels[self.__model_name] = {'uuid': self.__model_uuid}
         return all_models
->>>>>>> New N2VC interface + updated libjuju
 
 
 class AsyncMock(mock.MagicMock):
     async def __call__(self, *args, **kwargs):
         return super().__call__(*args, **kwargs)
+
+
+@contextmanager
+def patch_file(filename):
+    """
+    "Patch" a file so that its current contents are automatically restored
+    when the context is exited.
+    """
+    filepath = Path(filename).expanduser()
+    data = filepath.read_bytes()
+    try:
+        yield
+    finally:
+        filepath.write_bytes(data)

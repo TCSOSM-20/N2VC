@@ -1,6 +1,60 @@
 Changelog
 ---------
 
+<<<<<<< HEAD
+=======
+0.9.1
+^^^^^
+Monday July 16 2018
+
+* Update websockets to 6.0 to fix OS X support due to Brew update to Py3.7 (#254)
+
+
+0.9.0
+^^^^^
+Friday June 29 2018
+
+* python3.7 compatibility updates (#251)
+* Handle juju not installed in is_bootstrapped for tests (#250)
+* Add app.reset_config(list). (#249)
+* Implement model.get_action_status (#248)
+* Fix `make client` in Python 3.6 (#247)
+
+
+0.8.0
+^^^^^
+Thursday June 14 2018
+
+* Add support for adding a manual (ssh) machine (#240)
+* Backwards compatibility fixes (#213)
+* Implement model.get_action_output (#242)
+* Fix JSON serialization error for bundle with lxd to unit placement (#243)
+* Fix reference in docs to connect_current (#239)
+* Wrap machine agent status workaround in version check (#238)
+* Convert seconds to nanoseconds for juju.unit.run (#237)
+* Fix spurious intermittent failure in test_machines.py::test_status (#236)
+* Define an unused juju-zfs lxd storage pool for Travis (#235)
+* Add support for Application get_actions (#234)
+
+
+0.7.5
+^^^^^
+Friday May 18 2018
+
+* Surface errors from bundle plan (#233)
+* Always send auth-tag even with macaroon auth (#217)
+* Inline jsonfile credential when sending to controller (#231)
+
+0.7.4
+^^^^^
+Tuesday Apr 24 2018
+
+* Always parse tags and spaces constraints to lists (#228)
+* Doc index improvements (#211)
+* Add doc req to force newer pymacaroons to fix RTD builds
+* Fix dependency conflict for building docs
+
+>>>>>>> 8a2d5bc35a302a970244b3c307a4f47deac0af63
 0.7.3
 ^^^^^
 Tuesday Feb 20 2018
@@ -49,6 +103,7 @@ Fri Sept 29 2017
 * Make Application.upgrade_charm upgrade resources (#158)
 * Expand integration tests to use stable/edge versions of juju (#155)
 * Move docs to ReadTheDocs (https://pythonlibjuju.readthedocs.io/en/latest/)
+<<<<<<< HEAD
 
 0.6.1
 ^^^^^
@@ -60,6 +115,8 @@ Fri Sept 29 2017
 * Make Application.upgrade_charm upgrade resources (#158)
 * Expand integration tests to use stable/edge versions of juju (#155)
 * Move docs to ReadTheDocs (https://pythonlibjuju.readthedocs.io/en/latest/)
+=======
+>>>>>>> 8a2d5bc35a302a970244b3c307a4f47deac0af63
 
 0.6.0
 ^^^^^

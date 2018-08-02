@@ -124,3 +124,15 @@ Traceback (most recent call last):
     raise RuntimeError('Event loop is closed')                      
 RuntimeError: Event loop is closed
 ```
+
+## Modules
+
+To update the libjuju module:
+
+Needs to be fully tested:
+```bash
+git checkout master
+git subtree pull --prefix=modules/libjuju/ --squash libjuju master
+<resolve any merge conflicts>
+git merge --continue
+```

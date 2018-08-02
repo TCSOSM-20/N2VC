@@ -402,6 +402,29 @@ class N2VC:
                 )
                 raise
 
+    async def GetPrimitiveStatus(self, model_name, uuid):
+        results = None
+        try:
+            if not self.authenticated:
+                await self.login()
+
+            # FIXME: This is hard-coded until model-per-ns is added
+            model_name = 'default'
+
+            model = await self.controller.get_model(model_name)
+
+            results = await model.get_action_output(uuid)
+
+            await model.disconnect()
+        except Exception as e:
+            self.log.debug(
+                "Caught exception while getting primitive status: {}".format(e)
+            )
+            raise N2VCPrimitiveExecutionFailed(e)
+
+        return results
+
+
     async def ExecutePrimitive(self, model_name, application_name, primitive, callback, *callback_args, **params):
         """Execute a primitive of a charm for Day 1 or Day 2 configuration.
 
@@ -432,21 +455,27 @@ class N2VC:
 
             if primitive == 'config':
                 # config is special, and expecting params to be a dictionary
-                self.log.debug("Setting charm configuration for {}".format(application_name))
-                self.log.debug(params['params'])
-                await self.set_config(model, application_name, params['params'])
+                await self.set_config(
+                    model,
+                    application_name,
+                    params['params'],
+                )
             else:
                 app = await self.get_application(model, application_name)
                 if app:
                     # Run against the first (and probably only) unit in the app
                     unit = app.units[0]
                     if unit:
-                        self.log.debug("Executing primitive {}".format(primitive))
+                        self.log.debug(
+                            "Executing primitive {}".format(primitive)
+                        )
                         action = await unit.run_action(primitive, **params)
                         uuid = action.id
                 await model.disconnect()
         except Exception as e:
-            self.log.debug("Caught exception while executing primitive: {}".format(e))
+            self.log.debug(
+                "Caught exception while executing primitive: {}".format(e)
+            )
             raise N2VCPrimitiveExecutionFailed(e)
         return uuid
 

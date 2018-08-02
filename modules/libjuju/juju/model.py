@@ -22,12 +22,15 @@ import yaml
 from . import tag, utils
 from .client import client, connector
 from .client.client import ConfigValue
+from .client.client import Value
 from .constraints import parse as parse_constraints
 from .constraints import normalize_key
 from .delta import get_entity_class, get_entity_delta
 from .errors import JujuAPIError, JujuError
 from .exceptions import DeadEntityException
 from .placement import parse as parse_placement
+from . import provisioner
+
 
 log = logging.getLogger(__name__)
 
@@ -410,7 +413,7 @@ class Model:
             `juju.client.connection.Connection.MAX_FRAME_SIZE`
         :param bakery_client httpbakery.Client: The bakery client to use
             for macaroon authorization.
-        :param jujudata JujuData: The source for current controller information.
+        :param jujudata JujuData: The source for current controller information
         """
         self._connector = connector.Connector(
             loop=loop,
@@ -458,42 +461,101 @@ class Model:
     async def __aexit__(self, exc_type, exc, tb):
         await self.disconnect()
 
-    async def connect(self, model_name=None, **kwargs):
+    async def connect(self, *args, **kwargs):
         """Connect to a juju model.
 
-        If any arguments are specified other than model_name, then
-        model_name must be None and an explicit connection will be made
-        using Connection.connect using those parameters (the 'uuid'
-        parameter must be specified).
+        This supports two calling conventions:
 
-        Otherwise, if model_name is None, connect to the current model.
+        The model and (optionally) authentication information can be taken
+        from the data files created by the Juju CLI.  This convention will
+        be used if a ``model_name`` is specified, or if the ``endpoint``
+        and ``uuid`` are not.
 
-        Otherwise, model_name must specify the name of a known
-        model.
+        Otherwise, all of the ``endpoint``, ``uuid``, and authentication
+        information (``username`` and ``password``, or ``bakery_client`` and/or
+        ``macaroons``) are required.
+
+        If a single positional argument is given, it will be assumed to be
+        the ``model_name``.  Otherwise, the first positional argument, if any,
+        must be the ``endpoint``.
+
+        Available parameters are:
 
         :param model_name:  Format [controller:][user/]model
-
+        :param str endpoint: The hostname:port of the controller to connect to.
+        :param str uuid: The model UUID to connect to.
+        :param str username: The username for controller-local users (or None
+            to use macaroon-based login.)
+        :param str password: The password for controller-local users.
+        :param str cacert: The CA certificate of the controller
+            (PEM formatted).
+        :param httpbakery.Client bakery_client: The macaroon bakery client to
+            to use when performing macaroon-based login. Macaroon tokens
+            acquired when logging will be saved to bakery_client.cookies.
+            If this is None, a default bakery_client will be used.
+        :param list macaroons: List of macaroons to load into the
+            ``bakery_client``.
+        :param asyncio.BaseEventLoop loop: The event loop to use for async
+            operations.
+        :param int max_frame_size: The maximum websocket frame size to allow.
         """
         await self.disconnect()
-        if not kwargs:
-            await self._connector.connect_model(model_name)
+        if 'endpoint' not in kwargs and len(args) < 2:
+            if args and 'model_name' in kwargs:
+                raise TypeError('connect() got multiple values for model_name')
+            elif args:
+                model_name = args[0]
+            else:
+                model_name = kwargs.pop('model_name', None)
+            await self._connector.connect_model(model_name, **kwargs)
         else:
-            if kwargs.get('uuid') is None:
-                raise ValueError('no UUID specified when connecting to model')
+            if 'model_name' in kwargs:
+                raise TypeError('connect() got values for both '
+                                'model_name and endpoint')
+            if args and 'endpoint' in kwargs:
+                raise TypeError('connect() got multiple values for endpoint')
+            if len(args) < 2 and 'uuid' not in kwargs:
+                raise TypeError('connect() missing value for uuid')
+            has_userpass = (len(args) >= 4 or
+                            {'username', 'password'}.issubset(kwargs))
+            has_macaroons = (len(args) >= 6 or not
+                             {'bakery_client', 'macaroons'}.isdisjoint(kwargs))
+            if not (has_userpass or has_macaroons):
+                raise TypeError('connect() missing auth params')
+            arg_names = [
+                'endpoint',
+                'uuid',
+                'username',
+                'password',
+                'cacert',
+                'bakery_client',
+                'macaroons',
+                'loop',
+                'max_frame_size',
+            ]
+            for i, arg in enumerate(args):
+                kwargs[arg_names[i]] = arg
+            if not {'endpoint', 'uuid'}.issubset(kwargs):
+                raise ValueError('endpoint and uuid are required '
+                                 'if model_name not given')
+            if not ({'username', 'password'}.issubset(kwargs) or
+                    {'bakery_client', 'macaroons'}.intersection(kwargs)):
+                raise ValueError('Authentication parameters are required '
+                                 'if model_name not given')
             await self._connector.connect(**kwargs)
         await self._after_connect()
 
     async def connect_model(self, model_name):
         """
         .. deprecated:: 0.6.2
-           Use connect(model_name=model_name) instead.
+           Use ``connect(model_name=model_name)`` instead.
         """
         return await self.connect(model_name=model_name)
 
     async def connect_current(self):
         """
         .. deprecated:: 0.6.2
-           Use connect instead.
+           Use ``connect()`` instead.
         """
         return await self.connect()
 
@@ -528,7 +590,7 @@ class Model:
         if self.is_connected():
             log.debug('Closing model connection')
             await self._connector.disconnect()
-            self.info = None
+            self._info = None
 
     async def add_local_charm_dir(self, charm_dir, series):
         """Upload a local charm to the model.
@@ -675,10 +737,18 @@ class Model:
         """
         facade = client.ClientFacade.from_connection(self.connection())
 
-        self.info = await facade.ModelInfo()
+        self._info = await facade.ModelInfo()
         log.debug('Got ModelInfo: %s', vars(self.info))
 
         return self.info
+
+    @property
+    def info(self):
+        """Return the cached client.ModelInfo object for this Model.
+
+        If Model.get_info() has not been called, this will return None.
+        """
+        return self._info
 
     def add_observer(
             self, callable_, entity_type=None, action=None, entity_id=None,
@@ -880,7 +950,8 @@ class Model:
                 (None) - starts a new machine
                 'lxd' - starts a new machine with one lxd container
                 'lxd:4' - starts a new lxd container on machine 4
-                'ssh:user@10.10.0.3' - manually provisions a machine with ssh
+                'ssh:user@10.10.0.3:/path/to/private/key' - manually provision
+                a machine with ssh and the private key used for authentication
                 'zone=us-east-1a' - starts a machine in zone us-east-1s on AWS
                 'maas2.name' - acquire machine maas2.name on MAAS
 
@@ -929,12 +1000,25 @@ class Model:
 
         """
         params = client.AddMachineParams()
-        params.jobs = ['JobHostUnits']
 
         if spec:
-            placement = parse_placement(spec)
-            if placement:
-                params.placement = placement[0]
+            if spec.startswith("ssh:"):
+                placement, target, private_key_path = spec.split(":")
+                user, host = target.split("@")
+
+                sshProvisioner = provisioner.SSHProvisioner(
+                    host=host,
+                    user=user,
+                    private_key_path=private_key_path,
+                )
+
+                params = sshProvisioner.provision_machine()
+            else:
+                placement = parse_placement(spec)
+                if placement:
+                    params.placement = placement[0]
+
+        params.jobs = ['JobHostUnits']
 
         if constraints:
             params.constraints = client.Value.from_json(constraints)
@@ -953,6 +1037,17 @@ class Model:
         if error:
             raise ValueError("Error adding machine: %s" % error.message)
         machine_id = results.machines[0].machine
+
+        if spec:
+            if spec.startswith("ssh:"):
+                # Need to run this after AddMachines has been called,
+                # as we need the machine_id
+                await sshProvisioner.install_agent(
+                    self.connection(),
+                    params.nonce,
+                    machine_id,
+                )
+
         log.debug('Added new machine %s', machine_id)
         return await self._wait_for_new('machine', machine_id)
 
@@ -963,7 +1058,8 @@ class Model:
         :param str relation2: '<application>[:<relation_name>]'
 
         """
-        app_facade = client.ApplicationFacade.from_connection(self.connection())
+        connection = self.connection()
+        app_facade = client.ApplicationFacade.from_connection(connection)
 
         log.debug(
             'Adding relation %s <-> %s', relation1, relation2)
@@ -1312,7 +1408,8 @@ class Model:
         """Destroy units by name.
 
         """
-        app_facade = client.ApplicationFacade.from_connection(self.connection())
+        connection = self.connection()
+        app_facade = client.ApplicationFacade.from_connection(connection)
 
         log.debug(
             'Destroying unit%s %s',
@@ -1365,11 +1462,28 @@ class Model:
             config[key] = ConfigValue.from_json(value)
         return config
 
-    def get_constraints(self):
+    async def get_constraints(self):
         """Return the machine constraints for this model.
 
+        :returns: A ``dict`` of constraints.
         """
-        raise NotImplementedError()
+        constraints = {}
+        client_facade = client.ClientFacade.from_connection(self.connection())
+        result = await client_facade.GetModelConstraints()
+
+        # GetModelConstraints returns GetConstraintsResults which has a 'constraints'
+        # attribute. If no constraints have been set GetConstraintsResults.constraints
+        # is None. Otherwise GetConstraintsResults.constraints has an attribute for each
+        # possible constraint, each of these in turn will be None if they have not been
+        # set.
+        if result.constraints:
+           constraint_types = [a for a in dir(result.constraints)
+                               if a in Value._toSchema.keys()]
+           for constraint in constraint_types:
+               value = getattr(result.constraints, constraint)
+               if value is not None:
+                   constraints[constraint] = getattr(result.constraints, constraint)
+        return constraints
 
     def import_ssh_key(self, identity):
         """Add a public SSH key from a trusted indentity source to this model.
@@ -1528,31 +1642,79 @@ class Model:
                 config[key] = value.value
         await config_facade.ModelSet(config)
 
-    def set_constraints(self, constraints):
+    async def set_constraints(self, constraints):
         """Set machine constraints on this model.
 
-        :param :class:`juju.Constraints` constraints: Machine constraints
-
+        :param dict config: Mapping of model constraints
         """
-        raise NotImplementedError()
+        client_facade = client.ClientFacade.from_connection(self.connection())
+        await client_facade.SetModelConstraints(
+            application='',
+            constraints=constraints)
 
-    def get_action_output(self, action_uuid, wait=-1):
+    async def get_action_output(self, action_uuid, wait=None):
         """Get the results of an action by ID.
 
         :param str action_uuid: Id of the action
-        :param int wait: Time in seconds to wait for action to complete
-
+        :param int wait: Time in seconds to wait for action to complete.
+        :return dict: Output from action
+        :raises: :class:`JujuError` if invalid action_uuid
         """
-        raise NotImplementedError()
+        action_facade = client.ActionFacade.from_connection(
+            self.connection()
+        )
+        entity = [{'tag': tag.action(action_uuid)}]
+        # Cannot use self.wait_for_action as the action event has probably
+        # already happened and self.wait_for_action works by processing
+        # model deltas and checking if they match our type. If the action
+        # has already occured then the delta has gone.
 
-    def get_action_status(self, uuid_or_prefix=None, name=None):
-        """Get the status of all actions, filtered by ID, ID prefix, or action name.
+        async def _wait_for_action_status():
+            while True:
+                action_output = await action_facade.Actions(entity)
+                if action_output.results[0].status in ('completed', 'failed'):
+                    return
+                else:
+                    await asyncio.sleep(1)
+        await asyncio.wait_for(
+            _wait_for_action_status(),
+            timeout=wait)
+        action_output = await action_facade.Actions(entity)
+        # ActionResult.output is None if the action produced no output
+        if action_output.results[0].output is None:
+            output = {}
+        else:
+            output = action_output.results[0].output
+        return output
+
+    async def get_action_status(self, uuid_or_prefix=None, name=None):
+        """Get the status of all actions, filtered by ID, ID prefix, or name.
 
         :param str uuid_or_prefix: Filter by action uuid or prefix
         :param str name: Filter by action name
 
         """
-        raise NotImplementedError()
+        results = {}
+        action_results = []
+        action_facade = client.ActionFacade.from_connection(
+            self.connection()
+        )
+        if name:
+            name_results = await action_facade.FindActionsByNames([name])
+            action_results.extend(name_results.actions[0].actions)
+        if uuid_or_prefix:
+            # Collect list of actions matching uuid or prefix
+            matching_actions = await action_facade.FindActionTagsByPrefix(
+                [uuid_or_prefix])
+            entities = []
+            for actions in matching_actions.matches.values():
+                entities = [{'tag': a.tag} for a in actions]
+            # Get action results matching action tags
+            uuid_results = await action_facade.Actions(entities)
+            action_results.extend(uuid_results.results)
+        for a in action_results:
+            results[tag.untag('action-', a.action.tag)] = a.status
+        return results
 
     def get_budget(self, budget_name):
         """Get budget usage info.
@@ -1774,6 +1936,9 @@ class BundleHandler:
         self.plan = await self.client_facade.GetBundleChanges(
             yaml.dump(self.bundle))
 
+        if self.plan.errors:
+            raise JujuError(self.plan.errors)
+
     async def execute_plan(self):
         for step in self.plan.changes:
             method = getattr(self, step.method)
@@ -1839,7 +2004,11 @@ class BundleHandler:
 
         # Fix up values, as necessary.
         if 'parent_id' in params:
-            params['parent_id'] = self.resolve(params['parent_id'])
+            if params['parent_id'].startswith('$addUnit'):
+                unit = self.resolve(params['parent_id'])[0]
+                params['parent_id'] = unit.machine.entity_id
+            else:
+                params['parent_id'] = self.resolve(params['parent_id'])
 
         params['constraints'] = parse_constraints(
             params.get('constraints'))

@@ -171,13 +171,13 @@ def name_to_py(name):
 
 
 def strcast(kind, keep_builtins=False):
-    if issubclass(kind, typing.GenericMeta):
-        return str(kind)[1:]
-    if str(kind).startswith('~'):
-        return str(kind)[1:]
     if (kind in basic_types or
             type(kind) in basic_types) and keep_builtins is False:
         return kind.__name__
+    if str(kind).startswith('~'):
+        return str(kind)[1:]
+    if issubclass(kind, typing.GenericMeta):
+        return str(kind)[1:]
     return kind
 
 
@@ -291,6 +291,13 @@ class {}(Type):
                     source.append("{}self.{} = {}".format(INDENT * 2,
                                                           arg_name,
                                                           arg_name))
+                elif type(arg_type) is typing.TypeVar:
+                    source.append("{}self.{} = {}.from_json({}) "
+                                  "if {} else None".format(INDENT * 2,
+                                                           arg_name,
+                                                           arg_type_name,
+                                                           arg_name,
+                                                           arg_name))
                 elif issubclass(arg_type, typing.Sequence):
                     value_type = (
                         arg_type_name.__parameters__[0]
@@ -326,13 +333,6 @@ class {}(Type):
                         source.append("{}self.{} = {}".format(INDENT * 2,
                                                               arg_name,
                                                               arg_name))
-                elif type(arg_type) is typing.TypeVar:
-                    source.append("{}self.{} = {}.from_json({}) "
-                                  "if {} else None".format(INDENT * 2,
-                                                           arg_name,
-                                                           arg_type_name,
-                                                           arg_name,
-                                                           arg_name))
                 else:
                     source.append("{}self.{} = {}".format(INDENT * 2,
                                                           arg_name,
@@ -434,7 +434,7 @@ def ReturnMapping(cls):
     return decorator
 
 
-def makeFunc(cls, name, params, result, async=True):
+def makeFunc(cls, name, params, result, _async=True):
     INDENT = "    "
     args = Args(params)
     assignments = []
@@ -448,7 +448,7 @@ def makeFunc(cls, name, params, result, async=True):
     source = """
 
 @ReturnMapping({rettype})
-{async}def {name}(self{argsep}{args}):
+{_async}def {name}(self{argsep}{args}):
     '''
 {docstring}
     Returns -> {res}
@@ -460,12 +460,12 @@ def makeFunc(cls, name, params, result, async=True):
                version={cls.version},
                params=_params)
 {assignments}
-    reply = {await}self.rpc(msg)
+    reply = {_await}self.rpc(msg)
     return reply
 
 """
 
-    fsource = source.format(async="async " if async else "",
+    fsource = source.format(_async="async " if _async else "",
                             name=name,
                             argsep=", " if args else "",
                             args=args,
@@ -474,7 +474,7 @@ def makeFunc(cls, name, params, result, async=True):
                             docstring=textwrap.indent(args.get_doc(), INDENT),
                             cls=cls,
                             assignments=assignments,
-                            await="await " if async else "")
+                            _await="await " if _async else "")
     ns = _getns()
     exec(fsource, ns)
     func = ns[name]

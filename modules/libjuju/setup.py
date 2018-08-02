@@ -25,32 +25,36 @@ long_description = '{}\n\n{}'.format(
 version = here / 'VERSION'
 
 setup(
-        name='juju',
-        version=version.read_text().strip(),
-        packages=find_packages(
-            exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
-        install_requires=[
-            'websockets>=4.0,<5.0',
-            'pyyaml>=3.0,<4.0',
-            'theblues>=0.3.8,<1.0',
-            'python-dateutil',
-            ],
-        include_package_data=True,
-        maintainer='Juju Ecosystem Engineering',
-        maintainer_email='juju@lists.ubuntu.com',
-        description=('Python library for Juju'),
-        long_description=long_description,
-        url='https://github.com/juju/python-libjuju',
-        license='Apache 2',
-        classifiers=[
-            "Development Status :: 3 - Alpha",
-            "Intended Audience :: Developers",
-            "Programming Language :: Python",
-            "Programming Language :: Python :: 3",
-            "Programming Language :: Python :: 3.5",
-            ],
-        entry_points={
-            'console_scripts': [
-                ],
-            },
-        )
+    name='juju',
+    version=version.read_text().strip(),
+    packages=find_packages(
+        exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
+    install_requires=[
+        'macaroonbakery>=1.1,<2.0',
+        'pyRFC3339>=1.0,<2.0',
+        'pyyaml>=3.0,<=4.2',
+        'theblues>=0.3.8,<1.0',
+        'websockets>=4.0,<7.0',
+        'paramiko>=2.4.0,<3.0.0',
+    ],
+    include_package_data=True,
+    maintainer='Juju Ecosystem Engineering',
+    maintainer_email='juju@lists.ubuntu.com',
+    description=('Python library for Juju'),
+    long_description=long_description,
+    url='https://github.com/juju/python-libjuju',
+    license='Apache 2',
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+    ],
+    entry_points={
+        'console_scripts': [
+        ],
+    },
+)
