@@ -1,0 +1,9 @@
+metrics:
+  users:
+    type: gauge
+    description: "# of users"
+    command: who|wc -l
+  load:
+    type: gauge
+    description: "5 minute load average"
+    command: cat /proc/loadavg |awk '{print $1}'

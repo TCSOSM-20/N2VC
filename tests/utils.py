@@ -4,6 +4,8 @@ import logging
 import n2vc.vnf
 import pylxd
 import os
+import shlex
+import subprocess
 import time
 import uuid
 import yaml
@@ -11,6 +13,77 @@ import yaml
 # Disable InsecureRequestWarning w/LXD
 import urllib3
 urllib3.disable_warnings()
+
+here = os.path.dirname(os.path.realpath(__file__))
+
+
+def get_charm_path():
+    return "{}/charms".format(here)
+
+
+def get_layer_path():
+    return "{}/charms/layers".format(here)
+
+
+def parse_metrics(application, results):
+    """Parse the returned metrics into a dict."""
+
+    # We'll receive the results for all units, to look for the one we want
+    # Caveat: we're grabbing results from the first unit of the application,
+    # which is enough for testing, since we're only deploying a single unit.
+    retval = {}
+    for unit in results:
+        if unit.startswith(application):
+            for result in results[unit]:
+                retval[result['key']] = result['value']
+    return retval
+
+def collect_metrics(application):
+    """Invoke Juju's metrics collector.
+
+    Caveat: this shells out to the `juju collect-metrics` command, rather than
+    making an API call. At the time of writing, that API is not exposed through
+    the client library.
+    """
+
+    try:
+        logging.debug("Collecting metrics")
+        subprocess.check_call(['juju', 'collect-metrics', application])
+    except subprocess.CalledProcessError as e:
+        raise Exception("Unable to collect metrics: {}".format(e))
+
+
+def build_charm(charm):
+    """Build a test charm.
+
+    Builds one of the charms in tests/charms/layers and returns the path
+    to the compiled charm. The calling test is responsible for removing
+    the charm artifact during cleanup.
+    """
+    # stream_handler = logging.StreamHandler(sys.stdout)
+    # log.addHandler(stream_handler)
+
+    # Make sure the charm snap is installed
+    try:
+        logging.debug("Looking for charm-tools")
+        subprocess.check_call(['which', 'charm'])
+    except subprocess.CalledProcessError as e:
+        raise Exception("charm snap not installed.")
+
+    try:
+        builds = get_charm_path()
+
+        cmd = "charm build {}/{} -o {}/".format(
+            get_layer_path(),
+            charm,
+            builds,
+        )
+        subprocess.check_call(shlex.split(cmd))
+        return "{}/{}".format(builds, charm)
+    except subprocess.CalledProcessError as e:
+        raise Exception("charm build failed: {}.".format(e))
+
+    return None
 
 
 def get_descriptor(descriptor):
