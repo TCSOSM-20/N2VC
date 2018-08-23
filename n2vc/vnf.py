@@ -583,7 +583,50 @@ class N2VC:
             if parameter['value'] == "<rw_mgmt_ip>":
                 params[param] = str(values[parameter['value']])
             else:
-                params[param] = str(parameter['value'])
+                """
+                The Juju API uses strictly typed data-types, so we must make
+                sure the parameters from the VNFD match the appropriate type.
+
+                The honus will still be on the operator, to make sure the
+                data-type in the VNFD matches the one in the charm. N2VC will
+                raise N2VCPrimitiveExecutionFailed when there is a mismatch.
+
+                There are three data types supported by the YANG model:
+                # - STRING
+                # - INTEGER
+                # - BOOLEAN
+
+                Each parameter will look like this:
+                {
+                    'seq': '3',
+                    'name': 'testint',
+                    'parameter': [
+                        {
+                            'name': 'interval',
+                            'data-type': 'INTEGER',
+                            'value': 20
+                        }
+                    ]
+                }
+                """
+
+                if 'value' in parameter:
+                    # String is the default format
+                    val = str(parameter['value'])
+
+                    # If the data-type is explicitly set, cast to that type.
+                    if 'data-type' in parameter:
+                        dt = parameter['data-type'].upper()
+                        if dt == "INTEGER":
+                            val = int(val)
+
+                        elif dt == "BOOLEAN":
+                            if val in ['true', 'false', '0', '1']:
+                                val = True
+                            else:
+                                val = False
+
+                    params[param] = val
         return params
 
     def _get_config_from_yang(self, config_primitive, values):
