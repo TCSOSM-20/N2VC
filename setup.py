@@ -26,6 +26,7 @@ setup(
         'pyyaml>=3.0,<4.0',
         'theblues>=0.3.8,<1.0',
         'websockets>=4.0,<5.0',
+        'paramiko',
     ],
     include_package_data=True,
     maintainer='',
