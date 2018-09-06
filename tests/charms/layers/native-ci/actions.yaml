@@ -1,0 +1,8 @@
+test:
+    description: "Verify that the action can run."
+testint:
+    description: "Test a primitive with a non-string parameter"
+    params:
+        intval:
+            type: integer
+            default: 0
