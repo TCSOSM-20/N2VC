@@ -332,6 +332,10 @@ class N2VC:
         if 'rw_mgmt_ip' in params:
             rw_mgmt_ip = params['rw_mgmt_ip']
 
+        # initial_config = {}
+        if 'initial-config-primitive' not in params:
+            params['initial-config-primitive'] = {}
+
         initial_config = self._get_config_from_dict(
             params['initial-config-primitive'],
             {'<rw_mgmt_ip>': rw_mgmt_ip}
