@@ -327,7 +327,10 @@ class TestN2VC(object):
         usually contains tests).
         """
         # Initialize instance variable(s)
-        self.container = None
+        # self.container = None
+
+        # Track internal state for each test run
+        self.state = {}
 
         # Parse the test's descriptors
         self.nsd = get_descriptor(self.NSD_YAML)
@@ -357,8 +360,12 @@ class TestN2VC(object):
         """ teardown any state that was previously setup with a call to
         setup_class.
         """
-        if self.container:
-            destroy_lxd_container(self.container)
+        for application in self.state:
+            logging.warn(
+                "Destroying container for application {}".format(application)
+            )
+            if self.state[application]['container']:
+                destroy_lxd_container(self.state[application]['container'])
 
         # Clean up any artifacts created during the test
         logging.debug("Artifacts: {}".format(self.artifacts))
@@ -367,9 +374,26 @@ class TestN2VC(object):
             if os.path.exists(artifact['tmpdir']):
                 logging.debug("Removing directory '{}'".format(artifact))
                 shutil.rmtree(artifact['tmpdir'])
-
+        #
         # Logout of N2VC
-        asyncio.ensure_future(self.n2vc.logout())
+        if self.n2vc:
+            asyncio.ensure_future(self.n2vc.logout())
+        logging.debug("Tearing down")
+        pass
+
+    @classmethod
+    def all_charms_active(self):
+        """Determine if the all deployed charms are active."""
+        active = 0
+        for application in self.charms:
+            if self.charms[application]['status'] == 'active':
+                active += 1
+
+        if active == len(self.charms):
+            logging.warn("All charms active!")
+            return True
+
+        return False
 
     @classmethod
     def running(self, timeout=600):
@@ -462,7 +486,6 @@ class TestN2VC(object):
             'vnf-member-index': 1,
             'vnf-name': '',
             'charm-name': '',
-
             'initial-config-primitive': {},
             'config-primitive': {}
         ]
@@ -579,41 +602,79 @@ class TestN2VC(object):
         1. Get the public key from the charm via `get-ssh-public-key` action
         2. Create container with said key injected for the ubuntu user
         """
-        if self.container is None:
-            # logging.debug("CreateContainer called.")
+        # Create and configure a LXD container for use with a proxy charm.
+        (model, application, _, _) = args
+        # self.state[application_name]
 
+        print("trying to create container")
+        if self.state[application]['container'] is None:
+            logging.debug(
+                "Creating container for application {}".format(application)
+            )
             # HACK: Set this so the n2vc_callback knows
             # there's a container being created
-            self.container = True
-
-            # Create and configure a LXD container for use with a proxy charm.
-            (model_name, application_name, _, _) = args
+            self.state[application]['container'] = True
 
             # Execute 'get-ssh-public-key' primitive and get returned value
             uuid = await self.n2vc.ExecutePrimitive(
-                model_name,
-                application_name,
+                model,
+                application,
                 "get-ssh-public-key",
                 None,
             )
-            # logging.debug("Action UUID: {}".format(uuid))
-            result = await self.n2vc.GetPrimitiveOutput(model_name, uuid)
-            # logging.debug("Action result: {}".format(result))
+            result = await self.n2vc.GetPrimitiveOutput(model, uuid)
             pubkey = result['pubkey']
 
-            self.container = create_lxd_container(
+            self.state[application]['container'] = create_lxd_container(
                 public_key=pubkey,
                 name=os.path.basename(__file__)
             )
 
-        return self.container
+        return self.state[application]['container']
 
     @classmethod
-    def get_container_ip(self):
+    async def stop():
+        """Stop the test.
+
+        - Remove charms
+        - Stop and delete containers
+        - Logout of N2VC
+        """
+        logging.warning("Stop the test.")
+        assert True
+        for application in self.charms:
+            try:
+                logging.warn("Removing charm")
+                await self.n2vc.RemoveCharms(model, application)
+
+                logging.warn(
+                    "Destroying container for application {}".format(application)
+                )
+                if self.state[application]['container']:
+                    destroy_lxd_container(self.state[application]['container'])
+            except Exception as e:
+                logging.warn("Error while deleting container: {}".format(e))
+
+        # Clean up any artifacts created during the test
+        logging.debug("Artifacts: {}".format(self.artifacts))
+        for charm in self.artifacts:
+            artifact = self.artifacts[charm]
+            if os.path.exists(artifact['tmpdir']):
+                logging.debug("Removing directory '{}'".format(artifact))
+                shutil.rmtree(artifact['tmpdir'])
+
+        # Logout of N2VC
+        await self.n2vc.logout()
+        self.n2vc = None
+
+        self._running = False
+
+    @classmethod
+    def get_container_ip(self, container):
         """Return the IPv4 address of container's eth0 interface."""
         ipaddr = None
-        if self.container:
-            addresses = self.container.state().network['eth0']['addresses']
+        if container:
+            addresses = container.state().network['eth0']['addresses']
             # The interface may have more than one address, but we only need
             # the first one for testing purposes.
             ipaddr = addresses[0]['address']
@@ -644,12 +705,19 @@ class TestN2VC(object):
         - str, the workload message as reported by Juju
         """
         (model, application, status, message) = args
-        # logging.debug("Callback for {}/{} - {} ({})".format(
+        # logging.warn("Callback for {}/{} - {} ({})".format(
         #     model,
         #     application,
         #     status,
         #     message
         # ))
+
+        if application not in self.state:
+            # Initialize the state of the application
+            self.state[application] = {
+                'status': None,
+                'container': None,
+            }
 
         # Make sure we're only receiving valid status. This will catch charms
         # that aren't setting their workload state and appear as "unknown"
@@ -659,6 +727,9 @@ class TestN2VC(object):
         if kwargs and 'task' in kwargs:
             task = kwargs['task']
             # logging.debug("Got task: {}".format(task))
+
+        # if application in self.charms:
+        self.state[application]['status'] = status
 
         # Closures and inner functions, oh my.
         def is_active():
@@ -677,11 +748,18 @@ class TestN2VC(object):
             """Configure the proxy charm to use the lxd container."""
             logging.debug("configure_ssh_proxy({})".format(task))
 
-            mgmtaddr = self.get_container_ip()
+            mgmtaddr = self.get_container_ip(
+                self.state[application]['container'],
+            )
 
             logging.debug(
                 "Setting config ssh-hostname={}".format(mgmtaddr)
             )
+
+            # task = asyncio.ensure_future(
+            #     stop_test,
+            # )
+            # return
 
             task = asyncio.ensure_future(
                 self.n2vc.ExecutePrimitive(
@@ -751,11 +829,12 @@ class TestN2VC(object):
             logging.debug(metrics)
 
             if len(metrics):
+                logging.warn("[metrics] removing charms")
                 task = asyncio.ensure_future(
                     self.n2vc.RemoveCharms(model, application)
                 )
 
-                task.add_done_callback(functools.partial(stop_test))
+                task.add_done_callback(functools.partial(self.stop))
 
             else:
                 # TODO: Ran into a case where it took 9 attempts before metrics
@@ -796,17 +875,30 @@ class TestN2VC(object):
                     finished += 1
 
                     if waitfor == finished:
-                        # logging.debug("Action complete; removing charm")
-                        task = asyncio.ensure_future(
-                            self.n2vc.RemoveCharms(model, application)
-                        )
-
-                        task.add_done_callback(functools.partial(stop_test))
+                        if self.all_charms_active():
+                            logging.debug("Action complete; removing charm")
+                            task = asyncio.ensure_future(
+                                self.stop,
+                            )
+                            # task = asyncio.ensure_future(
+                            # self.n2vc.RemoveCharms(model, application)
+                            # )
+                            # task.add_done_callback(functools.partial(stop_test))
+                        else:
+                            logging.warn("Not all charms in an active state.")
                 elif result == "failed":
-                    # logging.debug("Action failed; removing charm")
-                    assert False
-                    self._running = False
-                    return
+                    logging.debug("Action failed; removing charm")
+                    task = asyncio.ensure_future(
+                        self.stop,
+                    )
+                    # task = asyncio.ensure_future(
+                        # self.n2vc.RemoveCharms(model, application)
+                    # )
+                    # task.add_done_callback(functools.partial(stop_test))
+
+                    # assert False
+                    # self._running = False
+                    # return
                 else:
                     # logging.debug("action is still running: {}".format(result))
                     # logging.debug(result)
@@ -829,30 +921,27 @@ class TestN2VC(object):
                     actionid,
                 ))
 
-        def stop_test(task):
-            """Stop the test.
-
-            When the test has either succeeded or reached a failing state,
-            begin the process of removing the test fixtures.
-            """
-            asyncio.ensure_future(
-                self.n2vc.RemoveCharms(model, application)
-            )
-
-            self._running = False
+        # def stop_test(task):
+        #     """Stop the test.
+        #
+        #     When the test has either succeeded or reached a failing state,
+        #     begin the process of removing the test fixtures.
+        #     """
+        #     for application in self.charms:
+        #         asyncio.ensure_future(
+        #             self.n2vc.RemoveCharms(model, application)
+        #         )
+        #
+        #     self._running = False
 
         if is_blocked():
-            # logging.debug("Charm is in a blocked state!")
-
             # Container only applies to proxy charms.
             if self.isproxy(application):
 
-                if self.container is None:
-                    # logging.debug(
-                    #     "Ensuring CreateContainer: status is {}".format(status)
-                    # )
-
+                if self.state[application]['container'] is None:
+                    logging.warn("Creating new container")
                     # Create the new LXD container
+
                     task = asyncio.ensure_future(self.CreateContainer(*args))
 
                     # Configure the proxy charm to use the container when ready
@@ -865,6 +954,14 @@ class TestN2VC(object):
                     # ))
                     # create_lxd_container()
                     # self.container = True
+                # else:
+                #     logging.warn("{} already has container".format(application))
+                #
+                #     task = asyncio.ensure_future(
+                #         self.n2vc.RemoveCharms(model, application)
+                #     )
+                #     task.add_done_callback(functools.partial(stop_test))
+
             else:
                 # A charm may validly be in a blocked state if it's waiting for
                 # relations or some other kind of manual intervention
@@ -874,7 +971,7 @@ class TestN2VC(object):
                     execute_initial_config_primitives()
                 )
 
-                task.add_done_callback(functools.partial(stop_test))
+                # task.add_done_callback(functools.partial(stop_test))
 
         elif is_active():
             # Does the charm have metrics defined?
@@ -892,8 +989,19 @@ class TestN2VC(object):
                 # When the charm reaches an active state and hasn't been
                 # handled (metrics collection, etc)., the test has succeded.
                 # logging.debug("Charm is active! Removing charm...")
-                task = asyncio.ensure_future(
-                    self.n2vc.RemoveCharms(model, application)
-                )
+                if self.all_charms_active():
+                    logging.warn("All charms active!")
+                    task = asyncio.ensure_future(
+                        self.stop(),
+                    )
 
-                task.add_done_callback(functools.partial(stop_test))
+                    # task = asyncio.ensure_future(
+                    #     self.n2vc.RemoveCharms(model, application)
+                    # )
+                    # task.add_done_callback(functools.partial(stop_test))
+                else:
+                    logging.warning("Waiting for all charms to be active.")
+                    # task = asyncio.ensure_future(
+                    #     self.n2vc.RemoveCharms(model, application)
+                    # )
+                    # task.add_done_callback(functools.partial(stop_test))
