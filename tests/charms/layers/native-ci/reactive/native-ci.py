@@ -42,3 +42,21 @@ def testint():
         action_set({'output': intval})
     finally:
         clear_flag('actions.testint')
+
+
+@when('db.joined')
+def provides_db(db):
+    """Simulate providing database credentials."""
+    db.configure(
+        database="mydb",
+        user="myuser",
+        password="mypassword",
+        host="myhost",
+        slave="myslave",
+    )
+
+
+@when('db.available')
+def requires_db(db):
+    """Simulate receiving database credentials."""
+    pass

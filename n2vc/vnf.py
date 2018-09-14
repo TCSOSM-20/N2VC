@@ -19,7 +19,7 @@ if path not in sys.path:
 
 from juju.controller import Controller
 from juju.model import ModelObserver
-
+from juju.errors import JujuAPIError
 
 # We might need this to connect to the websocket securely, but test and verify.
 try:
@@ -254,6 +254,100 @@ class N2VC:
 
         return self.default_model
 
+    async def Relate(self, ns_name, vnfd):
+        """Create a relation between the charm-enabled VDUs in a VNF.
+
+        The Relation mapping has two parts: the id of the vdu owning the endpoint, and the name of the endpoint.
+
+        vdu:
+            ...
+            relation:
+            -   provides: dataVM:db
+                requires: mgmtVM:app
+
+        This tells N2VC that the charm referred to by the dataVM vdu offers a relation named 'db', and the mgmtVM vdu has an 'app' endpoint that should be connected to a database.
+
+        :param str ns_name: The name of the network service.
+        :param dict vnfd: The parsed yaml VNF descriptor.
+        """
+
+        # Currently, the call to Relate() is made automatically after the
+        # deployment of each charm; if the relation depends on a charm that
+        # hasn't been deployed yet, the call will fail silently. This will
+        # prevent an API breakage, with the intent of making this an explicitly
+        # required call in a more object-oriented refactor of the N2VC API.
+
+        configs = []
+        vnf_config = vnfd.get("vnf-configuration")
+        if vnf_config:
+            juju = vnf_config['juju']
+            if juju:
+                configs.append(vnf_config)
+
+        for vdu in vnfd['vdu']:
+            vdu_config = vdu.get('vdu-configuration')
+            if vdu_config:
+                juju = vdu_config['juju']
+                if juju:
+                    configs.append(vdu_config)
+
+        def _get_application_name(name):
+            """Get the application name that's mapped to a vnf/vdu."""
+            vnf_member_index = 0
+            vnf_name = vnfd['name']
+
+            for vdu in vnfd.get('vdu'):
+                # Compare the named portion of the relation to the vdu's id
+                if vdu['id'] == name:
+                    application_name = self.FormatApplicationName(
+                        ns_name,
+                        vnf_name,
+                        str(vnf_member_index),
+                    )
+                    return application_name
+                else:
+                    vnf_member_index += 1
+
+            return None
+
+        # Loop through relations
+        for cfg in configs:
+            if 'juju' in cfg:
+                if 'relation' in juju:
+                    for rel in juju['relation']:
+                        try:
+
+                            # get the application name for the provides
+                            (name, endpoint) = rel['provides'].split(':')
+                            application_name = _get_application_name(name)
+
+                            provides = "{}:{}".format(
+                                application_name,
+                                endpoint
+                            )
+
+                            # get the application name for thr requires
+                            (name, endpoint) = rel['requires'].split(':')
+                            application_name = _get_application_name(name)
+
+                            requires = "{}:{}".format(
+                                application_name,
+                                endpoint
+                            )
+                            self.log.debug("Relation: {} <-> {}".format(
+                                provides,
+                                requires
+                            ))
+                            await self.add_relation(
+                                ns_name,
+                                provides,
+                                requires,
+                            )
+                        except Exception as e:
+                            self.log.debug("Exception: {}".format(e))
+
+        return
+
     async def DeployCharms(self, model_name, application_name, vnfd,
                            charm_path, params={}, machine_spec={},
                            callback=None, *callback_args):
@@ -383,6 +477,10 @@ class N2VC:
             # Where to deploy the charm to.
             to=to,
         )
+
+        # Map the vdu id<->app name,
+        #
+        await self.Relate(model_name, vnfd)
 
         # #######################################
         # # Execute initial config primitive(s) #
@@ -727,23 +825,31 @@ class N2VC:
         return False
 
     # Non-public methods
-    async def add_relation(self, a, b, via=None):
+    async def add_relation(self, model_name, relation1, relation2):
         """
         Add a relation between two application endpoints.
 
-        :param a An application endpoint
-        :param b An application endpoint
-        :param via The egress subnet(s) for outbound traffic, e.g.,
-            (192.168.0.0/16,10.0.0.0/8)
+        :param str model_name Name of the network service.
+        :param str relation1 '<application>[:<relation_name>]'
+        :param str relation12 '<application>[:<relation_name>]'
         """
+
         if not self.authenticated:
             await self.login()
 
-        m = await self.get_model()
+        m = await self.get_model(model_name)
         try:
-            m.add_relation(a, b, via)
-        finally:
-            await m.disconnect()
+            await m.add_relation(relation1, relation2)
+        except JujuAPIError as e:
+            # If one of the applications in the relationship doesn't exist,
+            # or the relation has already been added, let the operation fail
+            # silently.
+            if 'not found' in e.message:
+                return
+            if 'already exists' in e.message:
+                return
+
+            raise e
 
     # async def apply_config(self, config, application):
     #     """Apply a configuration to the application."""

@@ -1,4 +1,7 @@
-includes: ['layer:basic']
+includes:
+    - 'layer:basic'
+    - 'interface:mysql'
+    
 options:
     basic:
         use_venv: false

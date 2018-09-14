@@ -144,6 +144,11 @@ class TestCharm(base.TestN2VC):
                     juju:
                         charm: proxy-ci
                         proxy: true
+                        # Relation needs to map to the vdu providing or
+                        # requiring, so that we can map to the deployed app.
+                        relation:
+                        -   provides: dataVM:db
+                            requires: mgmtVM:app
                     initial-config-primitive:
                     -   seq: '1'
                         name: test
