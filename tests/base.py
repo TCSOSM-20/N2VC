@@ -163,7 +163,7 @@ def create_lxd_container(public_key=None, name="test_name"):
         name,
     )
 
-    private_key_path, public_key_path = find_juju_ssh_keys()
+    private_key_path, public_key_path = find_n2vc_ssh_keys()
 
     try:
         # create profile w/cloud-init and juju ssh key
@@ -330,6 +330,21 @@ def find_lxd_config():
     return (None, None)
 
 
+def find_n2vc_ssh_keys():
+    """Find the N2VC ssh keys."""
+
+    paths = []
+    paths.append(os.path.expanduser("~/.ssh/"))
+
+    for path in paths:
+        if os.path.exists(path):
+            private = os.path.expanduser("{}/id_n2vc_rsa".format(path))
+            public = os.path.expanduser("{}/id_n2vc_rsa.pub".format(path))
+            if os.path.exists(private) and os.path.exists(public):
+                return (private, public)
+    return (None, None)
+
+
 def find_juju_ssh_keys():
     """Find the Juju ssh keys."""
 
@@ -444,6 +459,7 @@ class TestN2VC(object):
         """
         debug("Running teardown_class...")
         try:
+
             debug("Destroying LXD containers...")
             for application in self.state:
                 if self.state[application]['container']:
@@ -452,9 +468,10 @@ class TestN2VC(object):
 
             # Logout of N2VC
             if self.n2vc:
-                debug("Logging out of N2VC...")
+                debug("teardown_class(): Logging out of N2VC...")
                 yield from self.n2vc.logout()
-                debug("Logging out of N2VC...done.")
+                debug("teardown_class(): Logging out of N2VC...done.")
+
             debug("Running teardown_class...done.")
         except Exception as ex:
             debug("Exception in teardown_class: {}".format(ex))
@@ -573,20 +590,50 @@ class TestN2VC(object):
         if not self.n2vc:
             self.n2vc = get_n2vc(loop=loop)
 
-        vnf_name = self.n2vc.FormatApplicationName(
+        application = self.n2vc.FormatApplicationName(
             self.ns_name,
             self.vnf_name,
             str(vnf_index),
         )
+
+        # Initialize the state of the application
+        self.state[application] = {
+            'status': None,     # Juju status
+            'container': None,  # lxd container, for proxy charms
+            'actions': {},      # Actions we've executed
+            'done': False,      # Are we done testing this charm?
+            'phase': "deploy",  # What phase is this application in?
+        }
+
         debug("Deploying charm at {}".format(self.artifacts[charm]))
+
+        # If this is a native charm, we need to provision the underlying
+        # machine ala an LXC container.
+        machine_spec = {}
+
+        if not self.isproxy(application):
+            debug("Creating container for native charm")
+            # args = ("default", application, None, None)
+            self.state[application]['container'] = create_lxd_container(
+                name=os.path.basename(__file__)
+            )
+
+            hostname = self.get_container_ip(
+                self.state[application]['container'],
+            )
+
+            machine_spec = {
+                'host': hostname,
+                'user': 'ubuntu',
+            }
 
         await self.n2vc.DeployCharms(
             self.ns_name,
-            vnf_name,
+            application,
             self.vnfd,
             self.get_charm(charm),
             params,
-            {},
+            machine_spec,
             self.n2vc_callback,
         )
 
@@ -722,6 +769,7 @@ class TestN2VC(object):
 
     @classmethod
     async def configure_proxy_charm(self, *args):
+        """Configure a container for use via ssh."""
         (model, application, _, _) = args
 
         try:
@@ -844,6 +892,17 @@ class TestN2VC(object):
             for application in self.charms:
                 try:
                     await self.n2vc.RemoveCharms(self.model, application)
+
+                    while True:
+                        # Wait for the application to be removed
+                        await asyncio.sleep(10)
+                        if not await self.n2vc.HasApplication(
+                            self.model,
+                            application,
+                        ):
+                            break
+
+                    # Need to wait for the charm to finish, because native charms
                     if self.state[application]['container']:
                         debug("Deleting LXD container...")
                         destroy_lxd_container(
@@ -858,10 +917,10 @@ class TestN2VC(object):
 
             # Logout of N2VC
             try:
-                debug("Logging out of N2VC...")
+                debug("stop(): Logging out of N2VC...")
                 await self.n2vc.logout()
                 self.n2vc = None
-                debug("Logging out of N2VC...Done.")
+                debug("stop(): Logging out of N2VC...Done.")
             except Exception as ex:
                 debug(ex)
 
