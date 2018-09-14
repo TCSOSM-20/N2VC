@@ -429,23 +429,14 @@ class N2VC:
         ########################################################
         to = ""
         if machine_spec.keys():
-            if all(k in machine_spec for k in ['hostname', 'username']):
-                # Get the path to the previously generated ssh private key.
-                # Machines we're manually provisioned must have N2VC's public
-                # key injected, so if we don't have a keypair, raise an error.
-                private_key_path = ""
-
-                # Enlist the existing machine in Juju
-                machine = await self.model.add_machine(
-                    spec='ssh:{}@{}:{}'.format(
-                        specs['host'],
-                        specs['user'],
-                        private_key_path,
-                    )
-                )
-                # Set the machine id that the deploy below will use.
+            if all(k in machine_spec for k in ['host', 'user']):
+                # Enlist an existing machine as a Juju unit
+                machine = await model.add_machine(spec='ssh:{}@{}:{}'.format(
+                    machine_spec['user'],
+                    machine_spec['host'],
+                    self.GetPrivateKeyPath(),
+                ))
                 to = machine.id
-            pass
 
         #######################################
         # Get the initial charm configuration #
