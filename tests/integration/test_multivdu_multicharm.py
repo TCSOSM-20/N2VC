@@ -170,9 +170,10 @@ class TestCharm(base.TestN2VC):
                 )
                 vnf_index += 1
 
-            while self.running():
+            while await self.running():
                 logging.debug("Waiting for test to finish...")
                 await asyncio.sleep(15)
-            logging.debug("test_charm_native stopped")
+            # assert False
+            logging.debug("test_multivdu_multicharm stopped")
 
         return 'ok'

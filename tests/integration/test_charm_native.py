@@ -3,7 +3,6 @@ Deploy a native charm (to LXD) and execute a primitive
 """
 
 import asyncio
-import logging
 import pytest
 from .. import base
 
@@ -133,9 +132,10 @@ class TestCharm(base.TestN2VC):
                     loop=event_loop,
                 )
 
-            while self.running():
-                logging.debug("Waiting for test to finish...")
+            while await self.running():
+                print("Waiting for test to finish...")
                 await asyncio.sleep(15)
-            logging.debug("test_charm_native stopped")
+
+            print("test_charm_native stopped")
 
         return 'ok'

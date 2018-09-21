@@ -87,20 +87,14 @@ class VCAMonitor(ModelObserver):
                     self.applications[application_name]['callback_args']
 
                 if old and new:
-                    old_status = old.workload_status
-                    new_status = new.workload_status
-
-                    if old_status == new_status:
-                        """The workload status may fluctuate around certain
-                        events, so wait until the status has stabilized before
-                        triggering the callback."""
-                        if callback:
-                            callback(
-                                self.ns_name,
-                                delta.data['application'],
-                                new_status,
-                                new.workload_status_message,
-                                *callback_args)
+                    # Fire off a callback with the application state
+                    if callback:
+                        callback(
+                            self.ns_name,
+                            delta.data['application'],
+                            new.workload_status,
+                            new.workload_status_message,
+                            *callback_args)
 
                 if old and not new:
                     # This is a charm being removed
@@ -172,6 +166,12 @@ class N2VC:
         self.controller = None
         self.connecting = False
         self.authenticated = False
+
+        # For debugging
+        self.refcount = {
+            'controller': 0,
+            'model': 0,
+        }
 
         self.models = {}
         self.default_model = None
@@ -811,6 +811,7 @@ class N2VC:
             self.models[model_name] = await self.controller.get_model(
                 model_name,
             )
+            self.refcount['model'] += 1
 
             # Create an observer for this model
             self.monitors[model_name] = VCAMonitor(model_name)
@@ -846,6 +847,7 @@ class N2VC:
                 password=self.secret,
                 cacert=cacert,
             )
+            self.refcount['controller'] += 1
         else:
             # current_controller no longer exists
             # self.log.debug("Connecting to current controller...")
@@ -860,8 +862,6 @@ class N2VC:
         self.authenticated = True
         self.log.debug("JujuApi: Logged into controller")
 
-        # self.default_model = await self.controller.get_model("default")
-
     async def logout(self):
         """Logout of the Juju controller."""
         if not self.authenticated:
@@ -873,20 +873,26 @@ class N2VC:
                     self.default_model
                 ))
                 await self.default_model.disconnect()
+                self.refcount['model'] -= 1
                 self.default_model = None
 
             for model in self.models:
                 await self.models[model].disconnect()
-                model = None
+                self.refcount['model'] -= 1
+                self.models[model] = None
 
             if self.controller:
                 self.log.debug("Disconnecting controller {}".format(
                     self.controller
                 ))
                 await self.controller.disconnect()
+                self.refcount['controller'] -= 1
                 self.controller = None
 
             self.authenticated = False
+
+            self.log.debug(self.refcount)
+
         except Exception as e:
             self.log.fatal(
                 "Fatal error logging out of Juju Controller: {}".format(e)

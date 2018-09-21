@@ -136,9 +136,10 @@ class TestCharm(base.TestN2VC):
                     event_loop,
                 )
 
-            while self.running():
-                logging.debug("Waiting for test to finish...")
+            while await self.running():
+                print("Waiting for test to finish...")
                 await asyncio.sleep(15)
+
             logging.debug("test_metrics_native stopped")
 
         return 'ok'
