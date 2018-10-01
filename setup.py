@@ -12,12 +12,12 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from pathlib import Path
 from setuptools import setup, find_packages
 
 setup(
     name='N2VC',
-    version=0.1,
+    version_command=('git describe --match v* --tags --long --dirty',
+                     'pep440-git-full'),
     packages=find_packages(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     install_requires=[
