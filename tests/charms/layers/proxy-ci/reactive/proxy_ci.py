@@ -13,7 +13,7 @@ import charms.sshproxy
 
 
 @when_not('proxy-ci.installed')
-def install_metrics_ci():
+def install_proxy_ci():
     status_set('blocked', "Waiting for SSH credentials.")
     set_flag('proxy-ci.installed')
 

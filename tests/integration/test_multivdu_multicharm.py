@@ -1,6 +1,7 @@
 """
-Test N2VC when the VNF descriptor does not contain an initial-config-primitive.
+Deploy a multi-vdu, multi-charm VNF
 """
+
 import asyncio
 import logging
 import pytest
@@ -13,14 +14,14 @@ class TestCharm(base.TestN2VC):
     NSD_YAML = """
     nsd:nsd-catalog:
         nsd:
-        -   id: noinitconfig-ns
-            name: noinitconfig-ns
-            short-name: noinitconfig-ns
-            description: NS with 1 VNFs noinitconfig-vnf connected by datanet and mgmtnet VLs
+        -   id: multivdumulticharm-ns
+            name: multivdumulticharm-ns
+            short-name: multivdumulticharm-ns
+            description: NS with 1 VNF connected by datanet and mgmtnet VLs
             version: '1.0'
             logo: osm.png
             constituent-vnfd:
-            -   vnfd-id-ref: noinitconfig-vnf
+            -   vnfd-id-ref: multivdumulticharm-vnf
                 member-vnf-index: '1'
             vld:
             -   id: mgmtnet
@@ -30,10 +31,10 @@ class TestCharm(base.TestN2VC):
                 mgmt-network: 'true'
                 vim-network-name: mgmt
                 vnfd-connection-point-ref:
-                -   vnfd-id-ref: noinitconfig-vnf
+                -   vnfd-id-ref: multivdumulticharm-vnf
                     member-vnf-index-ref: '1'
                     vnfd-connection-point-ref: vnf-mgmt
-                -   vnfd-id-ref: noinitconfig-vnf
+                -   vnfd-id-ref: multivdumulticharm-vnf
                     member-vnf-index-ref: '2'
                     vnfd-connection-point-ref: vnf-mgmt
             -   id: datanet
@@ -41,10 +42,10 @@ class TestCharm(base.TestN2VC):
                 short-name: datanet
                 type: ELAN
                 vnfd-connection-point-ref:
-                -   vnfd-id-ref: noinitconfig-vnf
+                -   vnfd-id-ref: multivdumulticharm-vnf
                     member-vnf-index-ref: '1'
                     vnfd-connection-point-ref: vnf-data
-                -   vnfd-id-ref: noinitconfig-vnf
+                -   vnfd-id-ref: multivdumulticharm-vnf
                     member-vnf-index-ref: '2'
                     vnfd-connection-point-ref: vnf-data
     """
@@ -52,11 +53,11 @@ class TestCharm(base.TestN2VC):
     VNFD_YAML = """
     vnfd:vnfd-catalog:
         vnfd:
-        -   id: noinitconfig-vnf
-            name: noinitconfig-vnf
-            short-name: noinitconfig-vnf
+        -   id: multivdumulticharm-vnf
+            name: multivdumulticharm-vnf
+            short-name: multivdumulticharm-vnf
             version: '1.0'
-            description: A VNF consisting of 2 VDUs w/charms connected to an internal VL, and one VDU with cloud-init
+            description: A VNF consisting of 1 VDUs w/proxy charm
             logo: osm.png
             connection-point:
             -   id: vnf-mgmt
@@ -107,16 +108,51 @@ class TestCharm(base.TestN2VC):
                 cloud-init-file: cloud-config.txt
                 vdu-configuration:
                     juju:
-                        charm: native-ci
-                        proxy: false
-                    config-primitive:
-                    -   name: test
+                        charm: proxy-ci
+                        proxy: true
+                    initial-config-primitive:
+                    -   seq: '1'
+                        name: test
+            -   id: dataVM
+                name: dataVM
+                image: xenial
+                count: '1'
+                vm-flavor:
+                    vcpu-count: '1'
+                    memory-mb: '1024'
+                    storage-gb: '10'
+                interface:
+                -   name: dataVM-eth0
+                    position: '1'
+                    type: EXTERNAL
+                    virtual-interface:
+                        type: VIRTIO
+                    external-connection-point-ref: vnf-mgmt
+                -   name: dataVM-eth1
+                    position: '2'
+                    type: INTERNAL
+                    virtual-interface:
+                        type: VIRTIO
+                    internal-connection-point-ref: dataVM-internal
+                internal-connection-point:
+                -   id: dataVM-internal
+                    name: dataVM-internal
+                    short-name: dataVM-internal
+                    type: VPORT
+                cloud-init-file: cloud-config.txt
+                vdu-configuration:
+                    juju:
+                        charm: proxy-ci
+                        proxy: true
+                    initial-config-primitive:
+                    -   seq: '1'
+                        name: test
 
     """
 
     # @pytest.mark.serial
     @pytest.mark.asyncio
-    async def test_charm_no_initial_config_primitive(self, event_loop):
+    async def test_multivdu_multicharm(self, event_loop):
         """Deploy and execute the initial-config-primitive of a VNF."""
 
         if self.nsd and self.vnfd:
@@ -132,11 +168,12 @@ class TestCharm(base.TestN2VC):
                     config,
                     event_loop,
                 )
+                vnf_index += 1
 
             while await self.running():
-                print("Waiting for test to finish...")
+                logging.debug("Waiting for test to finish...")
                 await asyncio.sleep(15)
-
-            logging.debug("test_charm_no_initial_config_primitive stopped")
+            # assert False
+            logging.debug("test_multivdu_multicharm stopped")
 
         return 'ok'

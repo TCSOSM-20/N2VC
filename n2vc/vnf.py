@@ -3,7 +3,9 @@ import logging
 import os
 import os.path
 import re
+import shlex
 import ssl
+import subprocess
 import sys
 # import time
 
@@ -87,20 +89,14 @@ class VCAMonitor(ModelObserver):
                     self.applications[application_name]['callback_args']
 
                 if old and new:
-                    old_status = old.workload_status
-                    new_status = new.workload_status
-
-                    if old_status == new_status:
-                        """The workload status may fluctuate around certain
-                        events, so wait until the status has stabilized before
-                        triggering the callback."""
-                        if callback:
-                            callback(
-                                self.ns_name,
-                                delta.data['application'],
-                                new_status,
-                                new.workload_status_message,
-                                *callback_args)
+                    # Fire off a callback with the application state
+                    if callback:
+                        callback(
+                            self.ns_name,
+                            delta.data['application'],
+                            new.workload_status,
+                            new.workload_status_message,
+                            *callback_args)
 
                 if old and not new:
                     # This is a charm being removed
@@ -172,6 +168,12 @@ class N2VC:
         self.controller = None
         self.connecting = False
         self.authenticated = False
+
+        # For debugging
+        self.refcount = {
+            'controller': 0,
+            'model': 0,
+        }
 
         self.models = {}
         self.default_model = None
@@ -333,15 +335,14 @@ class N2VC:
         ########################################################
         to = ""
         if machine_spec.keys():
-            # TODO: This needs to be tested.
-            # if all(k in machine_spec for k in ['hostname', 'username']):
-            #     # Enlist the existing machine in Juju
-            #     machine = await self.model.add_machine(spec='ssh:%@%'.format(
-            #         specs['host'],
-            #         specs['user'],
-            #     ))
-            #     to = machine.id
-            pass
+            if all(k in machine_spec for k in ['host', 'user']):
+                # Enlist an existing machine as a Juju unit
+                machine = await model.add_machine(spec='ssh:{}@{}:{}'.format(
+                    machine_spec['user'],
+                    machine_spec['host'],
+                    self.GetPrivateKeyPath(),
+                ))
+                to = machine.id
 
         #######################################
         # Get the initial charm configuration #
@@ -351,9 +352,6 @@ class N2VC:
         if 'rw_mgmt_ip' in params:
             rw_mgmt_ip = params['rw_mgmt_ip']
 
-        # initial_config = {}
-        # self.log.debug(type(params))
-        # self.log.debug("Params: {}".format(params))
         if 'initial-config-primitive' not in params:
             params['initial-config-primitive'] = {}
 
@@ -382,8 +380,8 @@ class N2VC:
             series='xenial',
             # Apply the initial 'config' primitive during deployment
             config=initial_config,
-            # TBD: Where to deploy the charm to.
-            to=None,
+            # Where to deploy the charm to.
+            to=to,
         )
 
         # #######################################
@@ -486,6 +484,77 @@ class N2VC:
             raise N2VCPrimitiveExecutionFailed(e)
 
         return results
+
+    # async def ProvisionMachine(self, model_name, hostname, username):
+    #     """Provision machine for usage with Juju.
+    #
+    #     Provisions a previously instantiated machine for use with Juju.
+    #     """
+    #     try:
+    #         if not self.authenticated:
+    #             await self.login()
+    #
+    #         # FIXME: This is hard-coded until model-per-ns is added
+    #         model_name = 'default'
+    #
+    #         model = await self.get_model(model_name)
+    #         model.add_machine(spec={})
+    #
+    #         machine = await model.add_machine(spec='ssh:{}@{}:{}'.format(
+    #             "ubuntu",
+    #             host['address'],
+    #             private_key_path,
+    #         ))
+    #         return machine.id
+    #
+    #     except Exception as e:
+    #         self.log.debug(
+    #             "Caught exception while getting primitive status: {}".format(e)
+    #         )
+    #         raise N2VCPrimitiveExecutionFailed(e)
+
+    def GetPrivateKeyPath(self):
+        homedir = os.environ['HOME']
+        sshdir = "{}/.ssh".format(homedir)
+        private_key_path = "{}/id_n2vc_rsa".format(sshdir)
+        return private_key_path
+
+    async def GetPublicKey(self):
+        """Get the N2VC SSH public key.abs
+
+        Returns the SSH public key, to be injected into virtual machines to
+        be managed by the VCA.
+
+        The first time this is run, a ssh keypair will be created. The public
+        key is injected into a VM so that we can provision the machine with
+        Juju, after which Juju will communicate with the VM directly via the
+        juju agent.
+        """
+        public_key = ""
+
+        # Find the path to where we expect our key to live.
+        homedir = os.environ['HOME']
+        sshdir = "{}/.ssh".format(homedir)
+        if not os.path.exists(sshdir):
+            os.mkdir(sshdir)
+
+        private_key_path = "{}/id_n2vc_rsa".format(sshdir)
+        public_key_path = "{}.pub".format(private_key_path)
+
+        # If we don't have a key generated, generate it.
+        if not os.path.exists(private_key_path):
+            cmd = "ssh-keygen -t {} -b {} -N '' -f {}".format(
+                "rsa",
+                "4096",
+                private_key_path
+            )
+            subprocess.check_output(shlex.split(cmd))
+
+        # Read the public key
+        with open(public_key_path, "r") as f:
+            public_key = f.readline()
+
+        return public_key
 
     async def ExecuteInitialPrimitives(self, model_name, application_name,
                                        params, callback=None, *callback_args):
@@ -650,6 +719,13 @@ class N2VC:
 
         return metrics
 
+    async def HasApplication(self, model_name, application_name):
+        model = await self.get_model(model_name)
+        app = await self.get_application(model, application_name)
+        if app:
+            return True
+        return False
+
     # Non-public methods
     async def add_relation(self, a, b, via=None):
         """
@@ -811,6 +887,7 @@ class N2VC:
             self.models[model_name] = await self.controller.get_model(
                 model_name,
             )
+            self.refcount['model'] += 1
 
             # Create an observer for this model
             self.monitors[model_name] = VCAMonitor(model_name)
@@ -846,6 +923,7 @@ class N2VC:
                 password=self.secret,
                 cacert=cacert,
             )
+            self.refcount['controller'] += 1
         else:
             # current_controller no longer exists
             # self.log.debug("Connecting to current controller...")
@@ -860,8 +938,6 @@ class N2VC:
         self.authenticated = True
         self.log.debug("JujuApi: Logged into controller")
 
-        # self.default_model = await self.controller.get_model("default")
-
     async def logout(self):
         """Logout of the Juju controller."""
         if not self.authenticated:
@@ -873,20 +949,26 @@ class N2VC:
                     self.default_model
                 ))
                 await self.default_model.disconnect()
+                self.refcount['model'] -= 1
                 self.default_model = None
 
             for model in self.models:
                 await self.models[model].disconnect()
-                model = None
+                self.refcount['model'] -= 1
+                self.models[model] = None
 
             if self.controller:
                 self.log.debug("Disconnecting controller {}".format(
                     self.controller
                 ))
                 await self.controller.disconnect()
+                self.refcount['controller'] -= 1
                 self.controller = None
 
             self.authenticated = False
+
+            self.log.debug(self.refcount)
+
         except Exception as e:
             self.log.fatal(
                 "Fatal error logging out of Juju Controller: {}".format(e)
