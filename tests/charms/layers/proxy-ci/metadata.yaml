@@ -10,3 +10,9 @@ tags:
 subordinate: false
 series:
   - xenial
+provides:
+    db:
+        interface: mysql
+requires:
+    app:
+        interface: mysql
