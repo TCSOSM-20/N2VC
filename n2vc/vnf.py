@@ -893,11 +893,11 @@ class N2VC:
         params = {}
         for parameter in parameters:
             param = str(parameter['name'])
+            value = None
 
             # Typecast parameter value, if present
             if 'data-type' in parameter:
                 paramtype = str(parameter['data-type']).lower()
-                value = None
 
                 if paramtype == "integer":
                     value = int(parameter['value'])
