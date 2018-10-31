@@ -494,11 +494,12 @@ class N2VC:
         # #######################################
         # # Execute initial config primitive(s) #
         # #######################################
-        await self.ExecuteInitialPrimitives(
+        uuids = await self.ExecuteInitialPrimitives(
             model_name,
             application_name,
             params,
         )
+        return uuids
 
         # primitives = {}
         #
