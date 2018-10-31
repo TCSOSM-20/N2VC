@@ -926,7 +926,6 @@ class N2VC:
 
         return config
 
-    @staticmethod
     def FormatApplicationName(self, *args):
         """
         Generate a Juju-compatible Application name
@@ -942,7 +941,6 @@ class N2VC:
 
             FormatApplicationName("ping_pong_ns", "ping_vnf", "a")
         """
-
         appname = ""
         for c in "-".join(list(args)):
             if c.isdigit():
