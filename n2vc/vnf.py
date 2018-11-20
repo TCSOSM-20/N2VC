@@ -887,6 +887,10 @@ class N2VC:
             param = str(parameter['name'])
             value = None
 
+            # If there's no value, use the default-value (if set)
+            if parameter['value'] is None and 'default-value' in parameter:
+                value = parameter['default-value']
+
             # Typecast parameter value, if present
             if 'data-type' in parameter:
                 paramtype = str(parameter['data-type']).lower()
@@ -897,6 +901,9 @@ class N2VC:
                     value = bool(parameter['value'])
                 else:
                     value = str(parameter['value'])
+            else:
+                # If there's no data-type, assume the value is a string
+                value = str(parameter['value'])
 
             if parameter['value'] == "<rw_mgmt_ip>":
                 params[param] = str(values[parameter['value']])
