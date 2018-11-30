@@ -176,7 +176,6 @@ class N2VC:
         }
 
         self.models = {}
-        self.default_model = None
 
         # Model Observers
         self.monitors = {}
@@ -235,26 +234,7 @@ class N2VC:
         return True
 
     # Public methods
-    async def CreateNetworkService(self, nsd):
-        """Create a new model to encapsulate this network service.
-
-        Create a new model in the Juju controller to encapsulate the
-        charms associated with a network service.
-
-        You can pass either the nsd record or the id of the network
-        service, but this method will fail without one of them.
-        """
-        if not self.authenticated:
-            await self.login()
-
-        # Ideally, we will create a unique model per network service.
-        # This change will require all components, i.e., LCM and SO, to use
-        # N2VC for 100% compatibility. If we adopt unique models for the LCM,
-        # services deployed via LCM would't be manageable via SO and vice versa
-
-        return self.default_model
-
-    async def Relate(self, ns_name, vnfd):
+    async def Relate(self, model_name, vnfd):
         """Create a relation between the charm-enabled VDUs in a VNF.
 
         The Relation mapping has two parts: the id of the vdu owning the endpoint, and the name of the endpoint.
@@ -300,7 +280,7 @@ class N2VC:
                 # Compare the named portion of the relation to the vdu's id
                 if vdu['id'] == name:
                     application_name = self.FormatApplicationName(
-                        ns_name,
+                        model_name,
                         vnf_name,
                         str(vnf_member_index),
                     )
@@ -339,7 +319,7 @@ class N2VC:
                                 requires
                             ))
                             await self.add_relation(
-                                ns_name,
+                                model_name,
                                 provides,
                                 requires,
                             )
@@ -355,7 +335,7 @@ class N2VC:
 
         Deploy the charm(s) referenced in a VNF Descriptor.
 
-        :param str model_name: The name of the network service.
+        :param str model_name: The name or unique id of the network service.
         :param str application_name: The name of the application
         :param dict vnfd: The name of the application
         :param str charm_path: The path to the Juju charm
@@ -402,9 +382,6 @@ class N2VC:
         ##########################################
         # Get the model for this network service #
         ##########################################
-        # TODO: In a point release, we will use a model per deployed network
-        # service. In the meantime, we will always use the 'default' model.
-        model_name = 'default'
         model = await self.get_model(model_name)
 
         ########################################
@@ -454,7 +431,8 @@ class N2VC:
             {'<rw_mgmt_ip>': rw_mgmt_ip}
         )
 
-        self.log.debug("JujuApi: Deploying charm ({}) from {}".format(
+        self.log.debug("JujuApi: Deploying charm ({}/{}) from {}".format(
+            model_name,
             application_name,
             charm_path,
             to=to,
@@ -543,9 +521,6 @@ class N2VC:
             if not self.authenticated:
                 await self.login()
 
-            # FIXME: This is hard-coded until model-per-ns is added
-            model_name = 'default'
-
             model = await self.get_model(model_name)
 
             results = await model.get_action_status(uuid)
@@ -570,9 +545,6 @@ class N2VC:
         try:
             if not self.authenticated:
                 await self.login()
-
-            # FIXME: This is hard-coded until model-per-ns is added
-            model_name = 'default'
 
             model = await self.get_model(model_name)
             results = await model.get_action_output(uuid, 60)
@@ -711,7 +683,7 @@ class N2VC:
 
         Execute a primitive defined in the VNF descriptor.
 
-        :param str model_name: The name of the network service.
+        :param str model_name: The name or unique id of the network service.
         :param str application_name: The name of the application
         :param str primitive: The name of the primitive to execute.
         :param obj callback: A callback function to receive status changes.
@@ -731,9 +703,6 @@ class N2VC:
         try:
             if not self.authenticated:
                 await self.login()
-
-            # FIXME: This is hard-coded until model-per-ns is added
-            model_name = 'default'
 
             model = await self.get_model(model_name)
 
@@ -787,6 +756,8 @@ class N2VC:
                 )
                 await app.remove()
 
+                await self.disconnect_model(self.monitors[model_name])
+
                 # Notify the callback that this charm has been removed.
                 self.notify_callback(
                     model_name,
@@ -807,7 +778,7 @@ class N2VC:
     async def GetMetrics(self, model_name, application_name):
         """Get the metrics collected by the VCA.
 
-        :param model_name The name of the model
+        :param model_name The name or unique id of the network service
         :param application_name The name of the application
         """
         metrics = {}
@@ -830,9 +801,9 @@ class N2VC:
         """
         Add a relation between two application endpoints.
 
-        :param str model_name Name of the network service.
-        :param str relation1 '<application>[:<relation_name>]'
-        :param str relation12 '<application>[:<relation_name>]'
+        :param str model_name: The name or unique id of the network service
+        :param str relation1: '<application>[:<relation_name>]'
+        :param str relation2: '<application>[:<relation_name>]'
         """
 
         if not self.authenticated:
@@ -987,7 +958,7 @@ class N2VC:
 
         return app
 
-    async def get_model(self, model_name='default'):
+    async def get_model(self, model_name):
         """Get a model from the Juju Controller.
 
         Note: Model objects returned must call disconnected() before it goes
@@ -996,9 +967,18 @@ class N2VC:
             await self.login()
 
         if model_name not in self.models:
-            self.models[model_name] = await self.controller.get_model(
-                model_name,
-            )
+            # Get the models in the controller
+            models = await self.controller.list_models()
+
+            if model_name not in models:
+                self.models[model_name] = await self.controller.add_model(
+                    model_name
+                )
+            else:
+                self.models[model_name] = await self.controller.get_model(
+                    model_name
+                )
+
             self.refcount['model'] += 1
 
             # Create an observer for this model
@@ -1056,18 +1036,8 @@ class N2VC:
             return
 
         try:
-            if self.default_model:
-                self.log.debug("Disconnecting model {}".format(
-                    self.default_model
-                ))
-                await self.default_model.disconnect()
-                self.refcount['model'] -= 1
-                self.default_model = None
-
             for model in self.models:
-                await self.models[model].disconnect()
-                self.refcount['model'] -= 1
-                self.models[model] = None
+                await self.disconnect_model(model)
 
             if self.controller:
                 self.log.debug("Disconnecting controller {}".format(
@@ -1086,6 +1056,19 @@ class N2VC:
                 "Fatal error logging out of Juju Controller: {}".format(e)
             )
             raise e
+
+    async def disconnect_model(self, model):
+        self.log.debug("Disconnecting model {}".format(model))
+        if model in self.models:
+            print(self.models[model].applications)
+            if len(self.models[model].applications) == 0:
+                print("Destroying empty model")
+                await self.controller.destroy_models(model)
+
+            print("Disconnecting model")
+            await self.models[model].disconnect()
+            self.refcount['model'] -= 1
+            self.models[model] = None
 
     # async def remove_application(self, name):
     #     """Remove the application."""
@@ -1116,12 +1099,14 @@ class N2VC:
         finally:
             await m.disconnect()
 
-    async def resolve_error(self, application=None):
+    async def resolve_error(self, model_name, application=None):
         """Resolve units in error state."""
         if not self.authenticated:
             await self.login()
 
-        app = await self.get_application(self.default_model, application)
+        model = await self.get_model(model_name)
+
+        app = await self.get_application(model, application)
         if app:
             self.log.debug(
                 "JujuApi: Resolving errors for application {}".format(
@@ -1132,7 +1117,7 @@ class N2VC:
             for unit in app.units:
                 app.resolved(retry=True)
 
-    async def run_action(self, application, action_name, **params):
+    async def run_action(self, model_name, application, action_name, **params):
         """Execute an action and return an Action object."""
         if not self.authenticated:
             await self.login()
@@ -1143,7 +1128,10 @@ class N2VC:
                 'results': None,
             }
         }
-        app = await self.get_application(self.default_model, application)
+
+        model = await self.get_model(model_name)
+
+        app = await self.get_application(model, application)
         if app:
             # We currently only have one unit per application
             # so use the first unit available.
@@ -1206,14 +1194,10 @@ class N2VC:
         if not self.authenticated:
             await self.login()
 
-        # TODO: In a point release, we will use a model per deployed network
-        # service. In the meantime, we will always use the 'default' model.
-        model_name = 'default'
         model = await self.get_model(model_name)
 
         app = await self.get_application(model, application_name)
         self.log.debug("Application: {}".format(app))
-        # app = await self.get_application(model_name, application_name)
         if app:
             self.log.debug(
                 "JujuApi: Waiting {} seconds for Application {}".format(

@@ -65,9 +65,9 @@ def debug(msg):
     logging.debug(
         "[{}] {}".format(now.strftime('%Y-%m-%dT%H:%M:%S'), msg)
     )
-    # print(
-    #     "[{}] {}".format(now.strftime('%Y-%m-%dT%H:%M:%S'), msg)
-    # )
+    print(
+        "[{}] {}".format(now.strftime('%Y-%m-%dT%H:%M:%S'), msg)
+    )
 
 
 def get_charm_path():
@@ -432,9 +432,6 @@ class TestN2VC(object):
         self.ns_name = self.nsd['name']
         self.vnf_name = self.vnfd['name']
 
-        # Hard-coded to default for now, but this may change in the future.
-        self.model = "default"
-
         self.charms = {}
         self.parse_vnf_descriptor()
         assert self.charms is not {}
@@ -553,7 +550,7 @@ class TestN2VC(object):
         # Make sure the charm snap is installed
         try:
             subprocess.check_call(['which', 'charm'])
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             raise Exception("charm snap not installed.")
 
         if charm not in self.artifacts:
@@ -565,7 +562,7 @@ class TestN2VC(object):
                 builds = get_charm_path()
 
                 if not os.path.exists("{}/builds/{}".format(builds, charm)):
-                    cmd = "charm build {}/{} -o {}/".format(
+                    cmd = "charm build --no-local-layers {}/{} -o {}/".format(
                         get_layer_path(),
                         charm,
                         builds,
@@ -891,13 +888,13 @@ class TestN2VC(object):
 
             for application in self.charms:
                 try:
-                    await self.n2vc.RemoveCharms(self.model, application)
+                    await self.n2vc.RemoveCharms(self.ns_name, application)
 
                     while True:
                         # Wait for the application to be removed
                         await asyncio.sleep(10)
                         if not await self.n2vc.HasApplication(
-                            self.model,
+                            self.ns_name,
                             application,
                         ):
                             break
@@ -962,7 +959,7 @@ class TestN2VC(object):
         )
 
         await self.n2vc.ExecutePrimitive(
-            self.model,
+            self.ns_name,
             application,
             "config",
             None,
@@ -987,7 +984,7 @@ class TestN2VC(object):
             Re-run those actions so we can inspect the status.
             """
             uuids = await self.n2vc.ExecuteInitialPrimitives(
-                self.model,
+                self.ns_name,
                 application,
                 init_config,
             )
@@ -1019,7 +1016,7 @@ class TestN2VC(object):
             debug("Collecting metrics for {}".format(application))
 
             metrics = await self.n2vc.GetMetrics(
-                self.model,
+                self.ns_name,
                 application,
             )
 
@@ -1069,7 +1066,7 @@ class TestN2VC(object):
 
                     debug("Getting status of {} ({})...".format(uid, status))
                     status = await self.n2vc.GetPrimitiveStatus(
-                        self.model,
+                        self.ns_name,
                         uid,
                     )
                     debug("...state of {} is {}".format(uid, status))
