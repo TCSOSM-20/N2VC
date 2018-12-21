@@ -345,6 +345,8 @@ class N2VC:
             'rw_mgmt_ip': '1.2.3.4',
             # Pass the initial-config-primitives section of the vnf or vdu
             'initial-config-primitives': {...}
+            'user_values': dictionary with the day-1 parameters provided at instantiation time. It will replace values
+                inside < >. rw_mgmt_ip will be included here also
           }
         :param dict machine_spec: A dictionary describing the machine to
         install to
@@ -647,15 +649,20 @@ class N2VC:
                 else:
                     seq = primitive['seq']
 
-                    params = {}
+                    params_ = {}
                     if 'parameter' in primitive:
-                        params = primitive['parameter']
+                        params_ = primitive['parameter']
+
+                    user_values = params.get("user_values", {})
+                    if 'rw_mgmt_ip' not in user_values:
+                        user_values['rw_mgmt_ip'] = None
+                        # just for backward compatibility, because it will be provided always by modern version of LCM
 
                     primitives[seq] = {
                         'name': primitive['name'],
                         'parameters': self._map_primitive_parameters(
-                            params,
-                            {'<rw_mgmt_ip>': None}
+                            params_,
+                            user_values
                         ),
                     }
 
@@ -698,7 +705,7 @@ class N2VC:
             'initial-config-primitives': {...}
           }
         """
-        self.log.debug("Executing {}".format(primitive))
+        self.log.debug("Executing primitive={} params={}".format(primitive, params))
         uuid = None
         try:
             if not self.authenticated:
@@ -852,34 +859,45 @@ class N2VC:
 
         return config
 
-    def _map_primitive_parameters(self, parameters, values):
+    def _map_primitive_parameters(self, parameters, user_values):
         params = {}
         for parameter in parameters:
             param = str(parameter['name'])
-            value = None
+            value = parameter.get('value')
+
+            # map parameters inside a < >; e.g. <rw_mgmt_ip>. with the provided user_values.
+            # Must exist at user_values except if there is a default value
+            if isinstance(value, str) and value.startswith("<") and value.endswith(">"):
+                if parameter['value'][1:-1] in user_values:
+                    value = user_values[parameter['value'][1:-1]]
+                elif 'default-value' in parameter:
+                    value = parameter['default-value']
+                else:
+                    raise KeyError("parameter {}='{}' not supplied ".format(param, value))
 
             # If there's no value, use the default-value (if set)
-            if parameter['value'] is None and 'default-value' in parameter:
+            if value is None and 'default-value' in parameter:
                 value = parameter['default-value']
 
             # Typecast parameter value, if present
-            if 'data-type' in parameter:
-                paramtype = str(parameter['data-type']).lower()
+            paramtype = "string"
+            try:
+                if 'data-type' in parameter:
+                    paramtype = str(parameter['data-type']).lower()
 
-                if paramtype == "integer":
-                    value = int(parameter['value'])
-                elif paramtype == "boolean":
-                    value = bool(parameter['value'])
+                    if paramtype == "integer":
+                        value = int(value)
+                    elif paramtype == "boolean":
+                        value = bool(value)
+                    else:
+                        value = str(value)
                 else:
-                    value = str(parameter['value'])
-            else:
-                # If there's no data-type, assume the value is a string
-                value = str(parameter['value'])
+                    # If there's no data-type, assume the value is a string
+                    value = str(value)
+            except ValueError:
+                raise ValueError("parameter {}='{}' cannot be converted to type {}".format(param, value, paramtype))
 
-            if parameter['value'] == "<rw_mgmt_ip>":
-                params[param] = str(values[parameter['value']])
-            else:
-                params[param] = value
+            params[param] = value
         return params
 
     def _get_config_from_yang(self, config_primitive, values):
