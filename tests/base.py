@@ -25,8 +25,7 @@ here = os.path.dirname(os.path.realpath(__file__))
 def is_bootstrapped():
     result = subprocess.run(['juju', 'switch'], stdout=subprocess.PIPE)
     return (
-        result.returncode == 0 and
-        len(result.stdout.decode().strip()) > 0)
+        result.returncode == 0 and len(result.stdout.decode().strip()) > 0)
 
 
 bootstrapped = pytest.mark.skipif(

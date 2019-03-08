@@ -36,7 +36,7 @@ def touch():
         filename = action_get('filename')
         cmd = ['touch {}'.format(filename)]
         result, err = charms.sshproxy._run(cmd)
-    except:
+    except Exception:
         action_fail('command failed:' + err)
     else:
         action_set({'output': result})

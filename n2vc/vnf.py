@@ -19,7 +19,7 @@ if path not in sys.path:
 
 from juju.controller import Controller
 from juju.model import ModelObserver
-from juju.errors import JujuAPIError
+from juju.errors import JujuAPIError, JujuError
 
 # We might need this to connect to the websocket securely, but test and verify.
 try:
@@ -41,6 +41,10 @@ class JujuApplicationExists(Exception):
 
 class N2VCPrimitiveExecutionFailed(Exception):
     """Something failed while attempting to execute a primitive."""
+
+
+class NetworkServiceDoesNotExist(Exception):
+    """The Network Service being acted against does not exist."""
 
 
 # Quiet the debug logging
@@ -779,8 +783,61 @@ class N2VC:
             self.log.debug(e)
             raise e
 
-    async def DestroyNetworkService(self, nsd):
-        raise NotImplementedError()
+    async def CreateNetworkService(self, ns_uuid):
+        """Create a new Juju model for the Network Service.
+
+        Creates a new Model in the Juju Controller.
+
+        :param str ns_uuid: A unique id representing an instaance of a
+            Network Service.
+
+        :returns: True if the model was created. Raises JujuError on failure.
+        """
+        if not self.authenticated:
+            await self.login()
+
+        models = await self.controller.list_models()
+        if ns_uuid not in models:
+            try:
+                self.models[ns_uuid] = await self.controller.add_model(
+                    ns_uuid
+                )
+            except JujuError as e:
+                if "already exists" not in e.message:
+                    raise e
+        return True
+
+    async def DestroyNetworkService(self, ns_uuid):
+        """Destroy a Network Service.
+
+        Destroy the Network Service and any deployed charms.
+
+        :param ns_uuid The unique id of the Network Service
+
+        :returns: True if the model was created. Raises JujuError on failure.
+        """
+
+        # Do not delete the default model. The default model was used by all
+        # Network Services, prior to the implementation of a model per NS.
+        if ns_uuid.lower() is "default":
+            return False
+
+        if not self.authenticated:
+            self.log.debug("Authenticating with Juju")
+            await self.login()
+
+        # Disconnect from the Model
+        if ns_uuid in self.models:
+            await self.disconnect_model(self.models[ns_uuid])
+
+        try:
+            await self.controller.destroy_models(ns_uuid)
+        except JujuError as e:
+            raise NetworkServiceDoesNotExist(
+                "The Network Service '{}' does not exist".format(ns_uuid)
+            )
+
+        return True
 
     async def GetMetrics(self, model_name, application_name):
         """Get the metrics collected by the VCA.
@@ -936,7 +993,7 @@ class N2VC:
             elif not c.isalpha():
                 c = "-"
             appname += c
-        return re.sub('\-+', '-', appname.lower())
+        return re.sub('-+', '-', appname.lower())
 
     # def format_application_name(self, nsd_name, vnfr_name, member_vnf_index=0):
     #     """Format the name of the application
@@ -989,9 +1046,13 @@ class N2VC:
             models = await self.controller.list_models()
 
             if model_name not in models:
-                self.models[model_name] = await self.controller.add_model(
-                    model_name
-                )
+                try:
+                    self.models[model_name] = await self.controller.add_model(
+                        model_name
+                    )
+                except JujuError as e:
+                    if "already exists" not in e.message:
+                        raise e
             else:
                 self.models[model_name] = await self.controller.get_model(
                     model_name
@@ -1051,7 +1112,7 @@ class N2VC:
     async def logout(self):
         """Logout of the Juju controller."""
         if not self.authenticated:
-            return
+            return False
 
         try:
             for model in self.models:
@@ -1074,15 +1135,11 @@ class N2VC:
                 "Fatal error logging out of Juju Controller: {}".format(e)
             )
             raise e
+        return True
 
     async def disconnect_model(self, model):
         self.log.debug("Disconnecting model {}".format(model))
         if model in self.models:
-            print(self.models[model].applications)
-            if len(self.models[model].applications) == 0:
-                print("Destroying empty model")
-                await self.controller.destroy_models(model)
-
             print("Disconnecting model")
             await self.models[model].disconnect()
             self.refcount['model'] -= 1
