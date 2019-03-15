@@ -1,0 +1,5 @@
+name: broken
+summary: A (broken) simple VNF proxy charm
+maintainer: Adam Israel <adam.israel@canonical.com>
+subordinate: false
+series: ['xenial']

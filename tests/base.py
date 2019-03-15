@@ -586,6 +586,9 @@ class TestN2VC(object):
         if not self.n2vc:
             self.n2vc = get_n2vc(loop=loop)
 
+        debug("Creating model for Network Service {}".format(self.ns_name))
+        await self.n2vc.CreateNetworkService(self.ns_name)
+
         application = self.n2vc.FormatApplicationName(
             self.ns_name,
             self.vnf_name,
@@ -888,6 +891,8 @@ class TestN2VC(object):
             for application in self.charms:
                 try:
                     await self.n2vc.RemoveCharms(self.ns_name, application)
+
+                    await self.n2vc.DestroyNetworkService(self.ns_name)
 
                     while True:
                         # Wait for the application to be removed

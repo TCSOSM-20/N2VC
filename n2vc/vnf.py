@@ -805,6 +805,10 @@ class N2VC:
             except JujuError as e:
                 if "already exists" not in e.message:
                     raise e
+
+            # Create an observer for this model
+            await self.create_model_monitor(ns_uuid)
+
         return True
 
     async def DestroyNetworkService(self, ns_uuid):
@@ -1061,10 +1065,20 @@ class N2VC:
             self.refcount['model'] += 1
 
             # Create an observer for this model
+            await self.create_model_monitor(model_name)
+
+        return self.models[model_name]
+
+    async def create_model_monitor(self, model_name):
+        """Create a monitor for the model, if none exists."""
+        if not self.authenticated:
+            await self.login()
+
+        if model_name not in self.monitors:
             self.monitors[model_name] = VCAMonitor(model_name)
             self.models[model_name].add_observer(self.monitors[model_name])
 
-        return self.models[model_name]
+        return True
 
     async def login(self):
         """Login to the Juju controller."""
