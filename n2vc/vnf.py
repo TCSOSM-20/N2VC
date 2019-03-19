@@ -769,11 +769,11 @@ class N2VC:
 
                 await self.disconnect_model(self.monitors[model_name])
 
-                # Notify the callback that this charm has been removed.
                 self.notify_callback(
                     model_name,
                     application_name,
                     "removed",
+                    "Removing charm {}".format(application_name),
                     callback,
                     *callback_args,
                 )
@@ -823,7 +823,7 @@ class N2VC:
 
         # Do not delete the default model. The default model was used by all
         # Network Services, prior to the implementation of a model per NS.
-        if ns_uuid.lower() is "default":
+        if ns_uuid.lower() == "default":
             return False
 
         if not self.authenticated:
@@ -836,7 +836,7 @@ class N2VC:
 
         try:
             await self.controller.destroy_models(ns_uuid)
-        except JujuError as e:
+        except JujuError:
             raise NetworkServiceDoesNotExist(
                 "The Network Service '{}' does not exist".format(ns_uuid)
             )

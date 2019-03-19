@@ -568,12 +568,17 @@ class TestN2VC(object):
                     )
                     subprocess.check_call(shlex.split(cmd))
 
-                self.artifacts[charm] = {
-                    'tmpdir': builds,
-                    'charm': "{}/builds/{}".format(builds, charm),
-                }
             except subprocess.CalledProcessError as e:
-                raise Exception("charm build failed: {}.".format(e))
+                # charm build will return error code 100 if the charm fails
+                # the auto-run of charm proof, which we can safely ignore for
+                # our CI charms.
+                if e.returncode != 100:
+                    raise Exception("charm build failed: {}.".format(e))
+
+            self.artifacts[charm] = {
+                'tmpdir': builds,
+                'charm': "{}/builds/{}".format(builds, charm),
+            }
 
         return self.artifacts[charm]['charm']
 
@@ -902,6 +907,7 @@ class TestN2VC(object):
                             application,
                         ):
                             break
+                    await self.n2vc.DestroyNetworkService(self.ns_name)
 
                     # Need to wait for the charm to finish, because native charms
                     if self.state[application]['container']:

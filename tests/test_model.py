@@ -2,10 +2,8 @@
 Test N2VC's ssh key generation
 """
 import n2vc
-import os
 import pytest
 from . import base
-import tempfile
 import uuid
 
 
