@@ -1,25 +1,25 @@
 import argparse
 import builtins
-from collections import defaultdict
 import functools
-from glob import glob
 import json
 import keyword
-from pathlib import Path
 import pprint
 import re
 import textwrap
-from typing import Sequence, Mapping, TypeVar, Any, Union
 import typing
+from collections import defaultdict
+from glob import glob
+from pathlib import Path
+from typing import Any, Mapping, Sequence, TypeVar, Union
 
 from . import codegen
 
 _marker = object()
 
-JUJU_VERSION = re.compile('[0-9]+\.[0-9-]+[\.\-][0-9a-z]+(\.[0-9]+)?')
+JUJU_VERSION = re.compile(r'[0-9]+\.[0-9-]+[\.\-][0-9a-z]+(\.[0-9]+)?')
 # Workaround for https://bugs.launchpad.net/juju/+bug/1683906
 NAUGHTY_CLASSES = ['ClientFacade', 'Client', 'FullStatus', 'ModelStatusInfo',
-                   'ModelInfo']
+                   'ModelInfo', 'ApplicationDeploy']
 
 
 # Map basic types to Python's typing with a callable
@@ -44,19 +44,20 @@ HEADER = """\
 # Classes and helper functions that we'll write to _client.py
 LOOKUP_FACADE = '''
 def lookup_facade(name, version):
-        """
-        Given a facade name and version, attempt to pull that facade out
-        of the correct client<version>.py file.
+    """
+    Given a facade name and version, attempt to pull that facade out
+    of the correct client<version>.py file.
 
-        """
+    """
+    for _version in range(int(version), 0, -1):
         try:
-            facade = getattr(CLIENTS[str(version)], name)
-        except KeyError:
-            raise ImportError("No facades found for version {}".format(version))
-        except AttributeError:
-            raise ImportError(
-                "No facade with name '{}' in version {}".format(name, version))
-        return facade
+            facade = getattr(CLIENTS[str(_version)], name)
+            return facade
+        except (KeyError, AttributeError):
+            continue
+    else:
+        raise ImportError("No supported version for facade: "
+                          "{}".format(name))
 
 
 '''
@@ -73,7 +74,14 @@ class TypeFactory:
         @param connection: initialized Connection object.
 
         """
-        version = connection.facades[cls.__name__[:-6]]
+        facade_name = cls.__name__
+        if not facade_name.endswith('Facade'):
+           raise TypeError('Unexpected class name: {}'.format(facade_name))
+        facade_name = facade_name[:-len('Facade')]
+        version = connection.facades.get(facade_name)
+        if version is None:
+            raise Exception('No facade {} in facades {}'.format(facade_name,
+                                                                connection.facades))
 
         c = lookup_facade(cls.__name__, version)
         c = c()
@@ -127,6 +135,7 @@ class TypeRegistry(dict):
 
         return self[refname]
 
+
 _types = TypeRegistry()
 _registry = KindRegistry()
 CLASSES = {}
@@ -170,13 +179,13 @@ def name_to_py(name):
 
 
 def strcast(kind, keep_builtins=False):
-    if issubclass(kind, typing.GenericMeta):
-        return str(kind)[1:]
-    if str(kind).startswith('~'):
-        return str(kind)[1:]
     if (kind in basic_types or
             type(kind) in basic_types) and keep_builtins is False:
         return kind.__name__
+    if str(kind).startswith('~'):
+        return str(kind)[1:]
+    if issubclass(kind, typing.GenericMeta):
+        return str(kind)[1:]
     return kind
 
 
@@ -257,7 +266,7 @@ def buildTypes(schema, capture):
     for kind in sorted((k for k in _types if not isinstance(k, str)),
                        key=lambda x: str(x)):
         name = _types[kind]
-        if name in capture and not name in NAUGHTY_CLASSES:
+        if name in capture and name not in NAUGHTY_CLASSES:
             continue
         args = Args(kind)
         # Write Factory class for _client.py
@@ -277,9 +286,7 @@ class {}(Type):
             pprint.pformat(args.SchemaToPyMapping(), width=999),
             ", " if args else "",
             args.as_kwargs(),
-            textwrap.indent(args.get_doc(), INDENT * 2))
-                  ]
-        assignments = args._get_arg_str(False, False)
+            textwrap.indent(args.get_doc(), INDENT * 2))]
 
         if not args:
             source.append("{}pass".format(INDENT * 2))
@@ -289,7 +296,16 @@ class {}(Type):
                 arg_type = arg[1]
                 arg_type_name = strcast(arg_type)
                 if arg_type in basic_types:
-                    source.append("{}self.{} = {}".format(INDENT * 2, arg_name, arg_name))
+                    source.append("{}self.{} = {}".format(INDENT * 2,
+                                                          arg_name,
+                                                          arg_name))
+                elif type(arg_type) is typing.TypeVar:
+                    source.append("{}self.{} = {}.from_json({}) "
+                                  "if {} else None".format(INDENT * 2,
+                                                           arg_name,
+                                                           arg_type_name,
+                                                           arg_name,
+                                                           arg_name))
                 elif issubclass(arg_type, typing.Sequence):
                     value_type = (
                         arg_type_name.__parameters__[0]
@@ -297,10 +313,16 @@ class {}(Type):
                         else None
                     )
                     if type(value_type) is typing.TypeVar:
-                        source.append("{}self.{} = [{}.from_json(o) for o in {} or []]".format(
-                            INDENT * 2, arg_name, strcast(value_type), arg_name))
+                        source.append(
+                            "{}self.{} = [{}.from_json(o) "
+                            "for o in {} or []]".format(INDENT * 2,
+                                                        arg_name,
+                                                        strcast(value_type),
+                                                        arg_name))
                     else:
-                        source.append("{}self.{} = {}".format(INDENT * 2, arg_name, arg_name))
+                        source.append("{}self.{} = {}".format(INDENT * 2,
+                                                              arg_name,
+                                                              arg_name))
                 elif issubclass(arg_type, typing.Mapping):
                     value_type = (
                         arg_type_name.__parameters__[1]
@@ -308,15 +330,21 @@ class {}(Type):
                         else None
                     )
                     if type(value_type) is typing.TypeVar:
-                        source.append("{}self.{} = {{k: {}.from_json(v) for k, v in ({} or dict()).items()}}".format(
-                            INDENT * 2, arg_name, strcast(value_type), arg_name))
+                        source.append(
+                            "{}self.{} = {{k: {}.from_json(v) "
+                            "for k, v in ({} or dict()).items()}}".format(
+                                INDENT * 2,
+                                arg_name,
+                                strcast(value_type),
+                                arg_name))
                     else:
-                        source.append("{}self.{} = {}".format(INDENT * 2, arg_name, arg_name))
-                elif type(arg_type) is typing.TypeVar:
-                    source.append("{}self.{} = {}.from_json({}) if {} else None".format(
-                        INDENT * 2, arg_name, arg_type_name, arg_name, arg_name))
+                        source.append("{}self.{} = {}".format(INDENT * 2,
+                                                              arg_name,
+                                                              arg_name))
                 else:
-                    source.append("{}self.{} = {}".format(INDENT * 2, arg_name, arg_name))
+                    source.append("{}self.{} = {}".format(INDENT * 2,
+                                                          arg_name,
+                                                          arg_name))
 
         source = "\n".join(source)
         capture.clear(name)
@@ -414,7 +442,7 @@ def ReturnMapping(cls):
     return decorator
 
 
-def makeFunc(cls, name, params, result, async=True):
+def makeFunc(cls, name, params, result, _async=True):
     INDENT = "    "
     args = Args(params)
     assignments = []
@@ -428,21 +456,24 @@ def makeFunc(cls, name, params, result, async=True):
     source = """
 
 @ReturnMapping({rettype})
-{async}def {name}(self{argsep}{args}):
+{_async}def {name}(self{argsep}{args}):
     '''
 {docstring}
     Returns -> {res}
     '''
     # map input types to rpc msg
     _params = dict()
-    msg = dict(type='{cls.name}', request='{name}', version={cls.version}, params=_params)
+    msg = dict(type='{cls.name}',
+               request='{name}',
+               version={cls.version},
+               params=_params)
 {assignments}
-    reply = {await}self.rpc(msg)
+    reply = {_await}self.rpc(msg)
     return reply
 
 """
 
-    fsource = source.format(async="async " if async else "",
+    fsource = source.format(_async="async " if _async else "",
                             name=name,
                             argsep=", " if args else "",
                             args=args,
@@ -451,7 +482,7 @@ def makeFunc(cls, name, params, result, async=True):
                             docstring=textwrap.indent(args.get_doc(), INDENT),
                             cls=cls,
                             assignments=assignments,
-                            await="await " if async else "")
+                            _await="await " if _async else "")
     ns = _getns()
     exec(fsource, ns)
     func = ns[name]
@@ -539,7 +570,7 @@ class Type:
         return d
 
     def to_json(self):
-        return json.dumps(self.serialize())
+        return json.dumps(self.serialize(), cls=TypeEncoder, sort_keys=True)
 
 
 class Schema(dict):
@@ -576,7 +607,7 @@ class Schema(dict):
         if not defs:
             return
         for d, data in defs.items():
-            if d in _registry and not d in NAUGHTY_CLASSES:
+            if d in _registry and d not in NAUGHTY_CLASSES:
                 continue
             node = self.deref(data, d)
             kind = node.get("type")
@@ -762,12 +793,14 @@ def generate_facades(options):
 
     return captures
 
+
 def setup():
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--schema", default="juju/client/schemas*")
     parser.add_argument("-o", "--output_dir", default="juju/client")
     options = parser.parse_args()
     return options
+
 
 def main():
     options = setup()
@@ -779,6 +812,7 @@ def main():
     last_version = write_facades(captures, options)
     write_definitions(captures, options, last_version)
     write_client(captures, options)
+
 
 if __name__ == '__main__':
     main()

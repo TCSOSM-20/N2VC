@@ -6,6 +6,7 @@ import unittest
 
 from juju import constraints
 
+
 class TestConstraints(unittest.TestCase):
 
     def test_mem_regex(self):
@@ -31,6 +32,12 @@ class TestConstraints(unittest.TestCase):
         self.assertEqual(_("10G"), 10 * 1024)
         self.assertEqual(_("10M"), 10)
         self.assertEqual(_("10"), 10)
+        self.assertEqual(_("foo,bar"), "foo,bar")
+
+    def test_normalize_list_val(self):
+        _ = constraints.normalize_list_value
+
+        self.assertEqual(_("foo"), ["foo"])
         self.assertEqual(_("foo,bar"), ["foo", "bar"])
 
     def test_parse_constraints(self):
@@ -42,6 +49,9 @@ class TestConstraints(unittest.TestCase):
         )
 
         self.assertEqual(
-            _("mem=10G foo=bar,baz"),
-            {"mem": 10 * 1024, "foo": ["bar", "baz"]}
+            _("mem=10G foo=bar,baz tags=tag1 spaces=space1,space2"),
+            {"mem": 10 * 1024,
+             "foo": "bar,baz",
+             "tags": ["tag1"],
+             "spaces": ["space1", "space2"]}
         )

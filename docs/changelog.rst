@@ -1,5 +1,164 @@
-Change Log
-----------
+Changelog
+---------
+
+0.11.3
+^^^^^^
+Wednesday March 13 2019
+
+* k8s bundles no longer have application placement (#293)
+* Add retry for connection if all endpoints fail (#288)
+* Support generation of registration string for model sharing. (#279)
+* Add Twine for dist upload on release (#284)
+
+
+0.11.2
+^^^^^^
+Wednesday January 16 2019
+
+* update facade methods for Juju 2.5-rc2 (#281)
+* Add test case for redirect during connect (#275)
+* Implement App.get_resources and pinned resources in bundles (#278)
+
+
+0.11.1
+^^^^^^
+Thursday December 13 2018
+
+* Fix bundles with subordinates for Juju <2.5 (#277)
+
+
+0.11.0
+^^^^^^
+Tuesday December 11 2018
+
+* Updates for new Juju version (#274)
+* Fix wrong variable name in revoke_model function (#271)
+
+
+0.10.2
+^^^^^^
+Tuesday September 18 2018
+
+* set include_stats to false to reduce request time (#266)
+
+
+0.10.1
+^^^^^^
+Monday September 17 2018
+
+* Retry ssh in manual provision test (#265)
+* Clean up lint and add lint coverage to travis config (#263)
+* Increase the timeout for charmstore connections (#262)
+* Fix log level of `Driver connected to juju` message (#258)
+
+
+0.10.0
+^^^^^^
+Thursday August 16 2018
+
+* Fix error due to scp extra opts order (#260)
+* Implement set/get model constraints (#253)
+
+
+0.9.1
+^^^^^
+Monday July 16 2018
+
+* Update websockets to 6.0 to fix OS X support due to Brew update to Py3.7 (#254)
+
+
+0.9.0
+^^^^^
+Friday June 29 2018
+
+* python3.7 compatibility updates (#251)
+* Handle juju not installed in is_bootstrapped for tests (#250)
+* Add app.reset_config(list). (#249)
+* Implement model.get_action_status (#248)
+* Fix `make client` in Python 3.6 (#247)
+
+
+0.8.0
+^^^^^
+Thursday June 14 2018
+
+* Add support for adding a manual (ssh) machine (#240)
+* Backwards compatibility fixes (#213)
+* Implement model.get_action_output (#242)
+* Fix JSON serialization error for bundle with lxd to unit placement (#243)
+* Fix reference in docs to connect_current (#239)
+* Wrap machine agent status workaround in version check (#238)
+* Convert seconds to nanoseconds for juju.unit.run (#237)
+* Fix spurious intermittent failure in test_machines.py::test_status (#236)
+* Define an unused juju-zfs lxd storage pool for Travis (#235)
+* Add support for Application get_actions (#234)
+
+
+0.7.5
+^^^^^
+Friday May 18 2018
+
+* Surface errors from bundle plan (#233)
+* Always send auth-tag even with macaroon auth (#217)
+* Inline jsonfile credential when sending to controller (#231)
+
+0.7.4
+^^^^^
+Tuesday Apr 24 2018
+
+* Always parse tags and spaces constraints to lists (#228)
+* Doc index improvements (#211)
+* Add doc req to force newer pymacaroons to fix RTD builds
+* Fix dependency conflict for building docs
+
+0.7.3
+^^^^^
+Tuesday Feb 20 2018
+
+* Full macaroon bakery support (#206)
+* Fix regression with deploying local charm, add test case (#209)
+* Expose a machines series (#208)
+* Automated test runner fixes (#205)
+
+0.7.2
+^^^^^
+Friday Feb 9 2018
+
+* Support deploying bundle YAML file directly (rather than just directory) (#202)
+
+0.7.1
+^^^^^
+Monday Dec 18 2017
+
+* Fix missed renames of model_uuids (#197)
+
+0.7.0
+^^^^^
+Fri Dec 15 2017
+
+* Fix race condition in adding relations (#192)
+* Fix race condition in connection monitor test (#183)
+* Fix example in README (#178)
+* Fix rare hang during Unit.run (#177)
+* Fix licensing quirks (#176)
+* Refactor model handling (#171)
+* Refactor users handling, add get_users (#170)
+* Upload credential to controller when adding model (#168)
+* Support 'applications' key in bundles (#165)
+* Improve handling of thread error handling for loop.run() (#169)
+* Fix encoding when using to_json() (#166)
+* Fix intermittent test failures (#167)
+
+0.6.1
+^^^^^
+Fri Sept 29 2017
+
+* Fix failure when controller supports newer facade version (#145)
+* Fix test failures (#163)
+* Fix SSH key handling when adding a new model (#161)
+* Make Application.upgrade_charm upgrade resources (#158)
+* Expand integration tests to use stable/edge versions of juju (#155)
+* Move docs to ReadTheDocs (https://pythonlibjuju.readthedocs.io/en/latest/)
 
 0.6.0
 ^^^^^

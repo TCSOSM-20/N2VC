@@ -1,3 +1,17 @@
+# Copyright 2016 Canonical Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import asyncio
 import logging
 
@@ -36,6 +50,24 @@ class Application(model.ModelEntity):
             unit for unit in self.model.units.values()
             if unit.application == self.name
         ]
+
+    @property
+    def relations(self):
+        return [rel for rel in self.model.relations if rel.matches(self.name)]
+
+    def related_applications(self, endpoint_name=None):
+        apps = {}
+        for rel in self.relations:
+            if rel.is_peer:
+                local_ep, remote_ep = rel.endpoints[0]
+            else:
+                def is_us(ep):
+                    return ep.application.name == self.name
+                local_ep, remote_ep = sorted(rel.endpoints, key=is_us)
+            if endpoint_name is not None and endpoint_name != local_ep.name:
+                continue
+            apps[remote_ep.application.name] = remote_ep.application
+        return apps
 
     @property
     def status(self):
@@ -98,6 +130,31 @@ class Application(model.ModelEntity):
         ])
 
     add_units = add_unit
+
+    async def scale(self, scale=None, scale_change=None):
+        """
+        Set or adjust the scale of this (K8s) application.
+
+        One or the other of scale or scale_change must be provided.
+
+        :param int scale: Scale to which to set this application.
+        :param int scale_change: Amount by which to adjust the scale of this
+            application (can be positive or negative).
+        """
+        app_facade = client.ApplicationFacade.from_connection(self.connection)
+
+        if (scale, scale_change) == (None, None):
+            raise ValueError('Must provide either scale or scale_change')
+
+        log.debug(
+            'Scaling application %s %s %s',
+            self.name, 'to' if scale else 'by', scale or scale_change)
+
+        await app_facade.ScaleApplications([
+            client.ScaleApplicationParam(application_tag=self.tag,
+                                         scale=scale,
+                                         scale_change=scale_change)
+        ])
 
     def allocate(self, budget, value):
         """Allocate budget to this application.
@@ -196,22 +253,43 @@ class Application(model.ModelEntity):
         result = (await app_facade.Get(self.name)).constraints
         return vars(result) if result else result
 
-    def get_actions(self, schema=False):
+    async def get_actions(self, schema=False):
         """Get actions defined for this application.
 
         :param bool schema: Return the full action schema
-
+        :return dict: The charms actions, empty dict if none are defined.
         """
-        raise NotImplementedError()
+        actions = {}
+        entity = [{"tag": self.tag}]
+        action_facade = client.ActionFacade.from_connection(self.connection)
+        results = (
+            await action_facade.ApplicationsCharmsActions(entity)).results
+        for result in results:
+            if result.application_tag == self.tag and result.actions:
+                actions = result.actions
+                break
+        if not schema:
+            actions = {k: v['description'] for k, v in actions.items()}
+        return actions
 
-    def get_resources(self, details=False):
+    async def get_resources(self):
         """Return resources for this application.
 
-        :param bool details: Include detailed info about resources used by each
-            unit
-
+        Returns a dict mapping resource name to
+        :class:`~juju._definitions.CharmResource` instances.
         """
-        raise NotImplementedError()
+        facade = client.ResourcesFacade.from_connection(self.connection)
+        response = await facade.ListResources([client.Entity(self.tag)])
+
+        resources = dict()
+        for result in response.results:
+            for resource in result.charm_store_resources or []:
+                resources[resource.name] = resource
+            for resource in result.resources or []:
+                if resource.charmresource:
+                    resource = resource.charmresource
+                    resources[resource.name] = resource
+        return resources
 
     async def run(self, command, timeout=None):
         """Run command on all units for this application.
@@ -252,12 +330,10 @@ class Application(model.ModelEntity):
         )
         return await self.ann_facade.Set([ann])
 
-    async def set_config(self, config, to_default=False):
+    async def set_config(self, config):
         """Set configuration options for this application.
 
         :param config: Dict of configuration to set
-        :param bool to_default: Set application options to default values
-
         """
         app_facade = client.ApplicationFacade.from_connection(self.connection)
 
@@ -265,6 +341,20 @@ class Application(model.ModelEntity):
             'Setting config for %s: %s', self.name, config)
 
         return await app_facade.Set(self.name, config)
+
+    async def reset_config(self, to_default):
+        """
+        Restore application config to default values.
+
+        :param list to_default: A list of config options to be reset to their
+        default value.
+        """
+        app_facade = client.ApplicationFacade.from_connection(self.connection)
+
+        log.debug(
+            'Restoring default config for %s: %s', self.name, to_default)
+
+        return await app_facade.Unset(self.name, to_default)
 
     async def set_constraints(self, constraints):
         """Set machine constraints for this application.
@@ -342,7 +432,12 @@ class Application(model.ModelEntity):
             raise ValueError("switch and revision are mutually exclusive")
 
         client_facade = client.ClientFacade.from_connection(self.connection)
+        resources_facade = client.ResourcesFacade.from_connection(
+            self.connection)
         app_facade = client.ApplicationFacade.from_connection(self.connection)
+
+        charmstore = self.model.charmstore
+        charmstore_entity = None
 
         if switch is not None:
             charm_url = switch
@@ -354,18 +449,65 @@ class Application(model.ModelEntity):
             if revision is not None:
                 charm_url = "%s-%d" % (charm_url, revision)
             else:
-                charmstore = self.model.charmstore
-                entity = await charmstore.entity(charm_url, channel=channel)
-                charm_url = entity['Id']
+                charmstore_entity = await charmstore.entity(charm_url,
+                                                            channel=channel)
+                charm_url = charmstore_entity['Id']
 
         if charm_url == self.data['charm-url']:
             raise JujuError('already running charm "%s"' % charm_url)
 
+        # Update charm
         await client_facade.AddCharm(
             url=charm_url,
             channel=channel
         )
 
+        # Update resources
+        if not charmstore_entity:
+            charmstore_entity = await charmstore.entity(charm_url,
+                                                        channel=channel)
+        store_resources = charmstore_entity['Meta']['resources']
+
+        request_data = [client.Entity(self.tag)]
+        response = await resources_facade.ListResources(request_data)
+        existing_resources = {
+            resource.name: resource
+            for resource in response.results[0].resources
+        }
+
+        resources_to_update = [
+            resource for resource in store_resources
+            if resource['Name'] not in existing_resources or
+            existing_resources[resource['Name']].origin != 'upload'
+        ]
+
+        if resources_to_update:
+            request_data = [
+                client.CharmResource(
+                    description=resource.get('Description'),
+                    fingerprint=resource['Fingerprint'],
+                    name=resource['Name'],
+                    path=resource['Path'],
+                    revision=resource['Revision'],
+                    size=resource['Size'],
+                    type_=resource['Type'],
+                    origin='store',
+                ) for resource in resources_to_update
+            ]
+            response = await resources_facade.AddPendingResources(
+                self.tag,
+                charm_url,
+                request_data
+            )
+            pending_ids = response.pending_ids
+            resource_ids = {
+                resource['Name']: id
+                for resource, id in zip(resources_to_update, pending_ids)
+            }
+        else:
+            resource_ids = None
+
+        # Update application
         await app_facade.SetCharm(
             application=self.entity_id,
             channel=channel,
@@ -374,7 +516,7 @@ class Application(model.ModelEntity):
             config_settings_yaml=None,
             force_series=force_series,
             force_units=force_units,
-            resource_ids=None,
+            resource_ids=resource_ids,
             storage_constraints=None
         )
 

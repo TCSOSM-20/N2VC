@@ -1,7 +1,7 @@
 import asyncio
-import pytest
-
 from tempfile import NamedTemporaryFile
+
+import pytest
 
 from .. import base
 
@@ -26,21 +26,24 @@ async def test_status(event_loop):
         assert machine.agent_status == 'pending'
         assert not machine.agent_version
 
+        # there is some inconsistency in the capitalization of status_message
+        # between different providers
         await asyncio.wait_for(
-            model.block_until(lambda: (machine.status == 'running' and
-                                       machine.agent_status == 'started')),
+            model.block_until(
+                lambda: (machine.status == 'running' and
+                         machine.status_message.lower() == 'running' and
+                         machine.agent_status == 'started')),
             timeout=480)
-
-        assert machine.status == 'running'
-        # there is some inconsistency in the message case between providers
-        assert machine.status_message.lower() == 'running'
-        assert machine.agent_status == 'started'
-        assert machine.agent_version.major >= 2
 
 
 @base.bootstrapped
 @pytest.mark.asyncio
 async def test_scp(event_loop):
+    # ensure that asyncio.subprocess will work;
+    try:
+        asyncio.get_child_watcher().attach_loop(event_loop)
+    except RuntimeError:
+        pytest.skip('test_scp will always fail outside of MainThread')
     async with base.CleanModel() as model:
         await model.add_machine()
         await asyncio.wait_for(
@@ -55,8 +58,8 @@ async def test_scp(event_loop):
         with NamedTemporaryFile() as f:
             f.write(b'testcontents')
             f.flush()
-            await machine.scp_to(f.name, 'testfile')
+            await machine.scp_to(f.name, 'testfile', scp_opts='-p')
 
         with NamedTemporaryFile() as f:
-            await machine.scp_from('testfile', f.name)
+            await machine.scp_from('testfile', f.name, scp_opts='-p')
             assert f.read() == b'testcontents'

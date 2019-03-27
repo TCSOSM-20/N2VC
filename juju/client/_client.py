@@ -3,33 +3,37 @@
 
 from juju.client._definitions import *
 
-from juju.client import _client1, _client2, _client3, _client4, _client5
+from juju.client import _client2, _client1, _client3, _client4, _client5, _client8, _client7, _client9
 
 
 CLIENTS = {
-    "1": _client1,
     "2": _client2,
+    "1": _client1,
     "3": _client3,
     "4": _client4,
-    "5": _client5
+    "5": _client5,
+    "8": _client8,
+    "7": _client7,
+    "9": _client9
 }
 
 
 
 def lookup_facade(name, version):
-        """
-        Given a facade name and version, attempt to pull that facade out
-        of the correct client<version>.py file.
+    """
+    Given a facade name and version, attempt to pull that facade out
+    of the correct client<version>.py file.
 
-        """
+    """
+    for _version in range(int(version), 0, -1):
         try:
-            facade = getattr(CLIENTS[str(version)], name)
-        except KeyError:
-            raise ImportError("No facades found for version {}".format(version))
-        except AttributeError:
-            raise ImportError(
-                "No facade with name '{}' in version {}".format(name, version))
-        return facade
+            facade = getattr(CLIENTS[str(_version)], name)
+            return facade
+        except (KeyError, AttributeError):
+            continue
+    else:
+        raise ImportError("No supported version for facade: "
+                          "{}".format(name))
 
 
 
@@ -44,7 +48,14 @@ class TypeFactory:
         @param connection: initialized Connection object.
 
         """
-        version = connection.facades[cls.__name__[:-6]]
+        facade_name = cls.__name__
+        if not facade_name.endswith('Facade'):
+           raise TypeError('Unexpected class name: {}'.format(facade_name))
+        facade_name = facade_name[:-len('Facade')]
+        version = connection.facades.get(facade_name)
+        if version is None:
+            raise Exception('No facade {} in facades {}'.format(facade_name,
+                                                                connection.facades))
 
         c = lookup_facade(cls.__name__, version)
         c = c()
@@ -54,6 +65,10 @@ class TypeFactory:
 
 
 class ActionFacade(TypeFactory):
+    pass
+
+
+class ActionPrunerFacade(TypeFactory):
     pass
 
 
@@ -81,6 +96,10 @@ class ApplicationFacade(TypeFactory):
     pass
 
 
+class ApplicationOffersFacade(TypeFactory):
+    pass
+
+
 class ApplicationRelationsWatcherFacade(TypeFactory):
     pass
 
@@ -98,6 +117,26 @@ class BlockFacade(TypeFactory):
 
 
 class BundleFacade(TypeFactory):
+    pass
+
+
+class CAASAgentFacade(TypeFactory):
+    pass
+
+
+class CAASFirewallerFacade(TypeFactory):
+    pass
+
+
+class CAASOperatorFacade(TypeFactory):
+    pass
+
+
+class CAASOperatorProvisionerFacade(TypeFactory):
+    pass
+
+
+class CAASUnitProvisionerFacade(TypeFactory):
     pass
 
 
@@ -125,6 +164,22 @@ class ControllerFacade(TypeFactory):
     pass
 
 
+class CredentialManagerFacade(TypeFactory):
+    pass
+
+
+class CredentialValidatorFacade(TypeFactory):
+    pass
+
+
+class CrossControllerFacade(TypeFactory):
+    pass
+
+
+class CrossModelRelationsFacade(TypeFactory):
+    pass
+
+
 class DeployerFacade(TypeFactory):
     pass
 
@@ -141,7 +196,19 @@ class EntityWatcherFacade(TypeFactory):
     pass
 
 
+class ExternalControllerUpdaterFacade(TypeFactory):
+    pass
+
+
+class FanConfigurerFacade(TypeFactory):
+    pass
+
+
 class FilesystemAttachmentsWatcherFacade(TypeFactory):
+    pass
+
+
+class FirewallRulesFacade(TypeFactory):
     pass
 
 
@@ -253,7 +320,15 @@ class ModelManagerFacade(TypeFactory):
     pass
 
 
+class ModelUpgraderFacade(TypeFactory):
+    pass
+
+
 class NotifyWatcherFacade(TypeFactory):
+    pass
+
+
+class OfferStatusWatcherFacade(TypeFactory):
     pass
 
 
@@ -281,11 +356,19 @@ class RebootFacade(TypeFactory):
     pass
 
 
+class RelationStatusWatcherFacade(TypeFactory):
+    pass
+
+
 class RelationUnitsWatcherFacade(TypeFactory):
     pass
 
 
 class RemoteApplicationWatcherFacade(TypeFactory):
+    pass
+
+
+class RemoteRelationsFacade(TypeFactory):
     pass
 
 
@@ -353,11 +436,19 @@ class UniterFacade(TypeFactory):
     pass
 
 
+class UpgradeSeriesFacade(TypeFactory):
+    pass
+
+
 class UpgraderFacade(TypeFactory):
     pass
 
 
 class UserManagerFacade(TypeFactory):
+    pass
+
+
+class VolumeAttachmentPlansWatcherFacade(TypeFactory):
     pass
 
 

@@ -1,5 +1,5 @@
-BIN := .tox/py35/bin
-PY := $(BIN)/python3.5
+BIN := .tox/py3/bin
+PY := $(BIN)/python
 PIP := $(BIN)/pip
 SCHEMAGEN := $(shell which schemagen)
 VERSION=$(shell cat VERSION)
@@ -13,7 +13,7 @@ clean:
 .tox:
 	tox -r --notest
 
-client:
+client: .tox
 ifndef SCHEMAGEN
 	$(error "schemagen is not available, please install from https://github.com/juju/schemagen")
 endif
@@ -22,6 +22,10 @@ endif
 test:
 	tox
 
+.PHONY: lint
+lint: 
+	tox -e lint --notest
+
 docs: .tox
 	$(PIP) install -r docs/requirements.txt
 	rm -rf docs/_build/
@@ -29,10 +33,12 @@ docs: .tox
 	cd docs/_build/ && zip -r docs.zip *
 
 release:
-	git remote | xargs -L1 git fetch --tags
-	$(PY) setup.py sdist upload
+	git fetch --tags
+	rm dist/*.tar.gz
+	$(PY) setup.py sdist
+	$(BIN)/twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
 	git tag ${VERSION}
-	git remote | xargs -L1 git push --tags
+	git push --tags
 
 upload: release
 

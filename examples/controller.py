@@ -8,7 +8,6 @@ This example:
 5. Destroys the model
 
 """
-import asyncio
 import logging
 
 from juju.controller import Controller
@@ -17,7 +16,8 @@ from juju import loop
 
 async def main():
     controller = Controller()
-    await controller.connect_current()
+    # connect to current controller with current user, per Juju CLI
+    await controller.connect()
     model = await controller.add_model(
         'my-test-model',
         'aws',

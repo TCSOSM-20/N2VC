@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 
-from dateutil.parser import parse as parse_date
+import pyrfc3339
 
 from . import model, utils
 from .client import client
@@ -14,7 +14,18 @@ log = logging.getLogger(__name__)
 class Machine(model.ModelEntity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.on_change(self._workaround_1695335)
+        self.model.loop.create_task(self._queue_workarounds())
+
+    async def _queue_workarounds(self):
+        model = self.model
+        if not model.info:
+            await utils.run_with_interrupt(model.get_info(),
+                                           model._watch_stopping,
+                                           loop=model.loop)
+        if model._watch_stopping.is_set():
+            return
+        if model.info.agent_version < client.Number.from_json('2.2.3'):
+            self.on_change(self._workaround_1695335)
 
     async def _workaround_1695335(self, delta, old, new, model):
         """
@@ -39,7 +50,7 @@ class Machine(model.ModelEntity):
 
         full_status = await utils.run_with_interrupt(model.get_status(),
                                                      model._watch_stopping,
-                                                     model.loop)
+                                                     loop=model.loop)
         if model._watch_stopping.is_set():
             return
 
@@ -66,8 +77,8 @@ class Machine(model.ModelEntity):
             change_log.append(('agent-version', '', agent_version))
 
         # only update (other) delta fields if status data is newer
-        status_since = parse_date(machine['instance-status']['since'])
-        delta_since = parse_date(delta.data['instance-status']['since'])
+        status_since = pyrfc3339.parse(machine['instance-status']['since'])
+        delta_since = pyrfc3339.parse(delta.data['instance-status']['since'])
         if status_since > delta_since:
             for status_key in ('status', 'info', 'since'):
                 delta_key = key_map[status_key]
@@ -135,7 +146,8 @@ class Machine(model.ModelEntity):
         :param str destination: Remote destination of transferred files
         :param str user: Remote username
         :param bool proxy: Proxy through the Juju API server
-        :param str scp_opts: Additional options to the `scp` command
+        :param scp_opts: Additional options to the `scp` command
+        :type scp_opts: str or list
         """
         if proxy:
             raise NotImplementedError('proxy option is not implemented')
@@ -152,7 +164,8 @@ class Machine(model.ModelEntity):
         :param str destination: Local destination of transferred files
         :param str user: Remote username
         :param bool proxy: Proxy through the Juju API server
-        :param str scp_opts: Additional options to the `scp` command
+        :param scp_opts: Additional options to the `scp` command
+        :type scp_opts: str or list
         """
         if proxy:
             raise NotImplementedError('proxy option is not implemented')
@@ -169,9 +182,11 @@ class Machine(model.ModelEntity):
             'scp',
             '-i', os.path.expanduser('~/.local/share/juju/ssh/juju_id_rsa'),
             '-o', 'StrictHostKeyChecking=no',
-            source, destination
+            '-q',
+            '-B'
         ]
-        cmd += scp_opts.split()
+        cmd.extend(scp_opts.split() if isinstance(scp_opts, str) else scp_opts)
+        cmd.extend([source, destination])
         loop = self.model.loop
         process = await asyncio.create_subprocess_exec(*cmd, loop=loop)
         await process.wait()
@@ -211,7 +226,7 @@ class Machine(model.ModelEntity):
         """Get the time when the `agent_status` was last updated.
 
         """
-        return parse_date(self.safe_data['agent-status']['since'])
+        return pyrfc3339.parse(self.safe_data['agent-status']['since'])
 
     @property
     def agent_version(self):
@@ -244,7 +259,7 @@ class Machine(model.ModelEntity):
         """Get the time when the `status` was last updated.
 
         """
-        return parse_date(self.safe_data['instance-status']['since'])
+        return pyrfc3339.parse(self.safe_data['instance-status']['since'])
 
     @property
     def dns_name(self):
@@ -260,3 +275,10 @@ class Machine(model.ModelEntity):
             if addresses:
                 return addresses[0]['value']
         return None
+
+    @property
+    def series(self):
+        """Returns the series of the current machine
+
+        """
+        return self.safe_data['series']

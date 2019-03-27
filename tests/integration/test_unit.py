@@ -1,7 +1,7 @@
 import asyncio
-import pytest
-
 from tempfile import NamedTemporaryFile
+
+import pytest
 
 from .. import base
 
@@ -25,6 +25,18 @@ async def test_run(event_loop):
             assert 'Stdout' in action.results
             break
 
+        for unit in app.units:
+            action = await unit.run('sleep 1', timeout=0.5)
+            assert isinstance(action, Action)
+            assert action.status == 'failed'
+            break
+
+        for unit in app.units:
+            action = await unit.run('sleep 0.5', timeout=2)
+            assert isinstance(action, Action)
+            assert action.status == 'completed'
+            break
+
 
 @base.bootstrapped
 @pytest.mark.asyncio
@@ -46,12 +58,21 @@ async def test_run_action(event_loop):
         for unit in app.units:
             action = await run_action(unit)
             assert action.results == {'dir': '/var/git/myrepo.git'}
+            out = await model.get_action_output(action.entity_id, wait=5)
+            assert out == {'dir': '/var/git/myrepo.git'}
+            status = await model.get_action_status(uuid_or_prefix=action.entity_id)
+            assert status[action.entity_id] == 'completed'
             break
 
 
 @base.bootstrapped
 @pytest.mark.asyncio
 async def test_scp(event_loop):
+    # ensure that asyncio.subprocess will work;
+    try:
+        asyncio.get_child_watcher().attach_loop(event_loop)
+    except RuntimeError:
+        pytest.skip('test_scp will always fail outside of MainThread')
     async with base.CleanModel() as model:
         app = await model.deploy('ubuntu')
 

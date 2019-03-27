@@ -30,10 +30,13 @@ setup(
     packages=find_packages(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     install_requires=[
-        'websockets',
-        'pyyaml',
-        'theblues',
-        'python-dateutil'
+        'macaroonbakery>=1.1,<2.0',
+        'pyRFC3339>=1.0,<2.0',
+        'pyyaml>=3.0,<=4.2',
+        'theblues>=0.3.8,<1.0',
+        'websockets>=7.0,<8.0',
+        'paramiko>=2.4.0,<3.0.0',
+        'pyasn1>=0.4.4',
     ],
     include_package_data=True,
     maintainer='Juju Ecosystem Engineering',
@@ -48,6 +51,8 @@ setup(
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
     ],
     entry_points={
         'console_scripts': [

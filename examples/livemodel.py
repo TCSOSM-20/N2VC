@@ -6,8 +6,6 @@ This example:
 3. Runs forever (kill with Ctrl-C)
 
 """
-import asyncio
-
 from juju.model import Model
 from juju import loop
 
@@ -21,7 +19,8 @@ async def on_model_change(delta, old, new, model):
 
 async def watch_model():
     model = Model()
-    await model.connect_current()
+    # connect to current model with current user, per Juju CLI
+    await model.connect()
 
     model.add_observer(on_model_change)
 
