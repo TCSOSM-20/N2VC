@@ -1,8 +1,66 @@
 Changelog
 ---------
 
-<<<<<<< HEAD
-=======
+0.11.3
+^^^^^^
+Wednesday March 13 2019
+
+* k8s bundles no longer have application placement (#293)
+* Add retry for connection if all endpoints fail (#288)
+* Support generation of registration string for model sharing. (#279)
+* Add Twine for dist upload on release (#284)
+
+
+0.11.2
+^^^^^^
+Wednesday January 16 2019
+
+* update facade methods for Juju 2.5-rc2 (#281)
+* Add test case for redirect during connect (#275)
+* Implement App.get_resources and pinned resources in bundles (#278)
+
+
+0.11.1
+^^^^^^
+Thursday December 13 2018
+
+* Fix bundles with subordinates for Juju <2.5 (#277)
+
+
+0.11.0
+^^^^^^
+Tuesday December 11 2018
+
+* Updates for new Juju version (#274)
+* Fix wrong variable name in revoke_model function (#271)
+
+
+0.10.2
+^^^^^^
+Tuesday September 18 2018
+
+* set include_stats to false to reduce request time (#266)
+
+
+0.10.1
+^^^^^^
+Monday September 17 2018
+
+* Retry ssh in manual provision test (#265)
+* Clean up lint and add lint coverage to travis config (#263)
+* Increase the timeout for charmstore connections (#262)
+* Fix log level of `Driver connected to juju` message (#258)
+
+
+0.10.0
+^^^^^^
+Thursday August 16 2018
+
+* Fix error due to scp extra opts order (#260)
+* Implement set/get model constraints (#253)
+
+
+>>>>>>> b8a8281b1785358bd5632a119c016f21811172c6
 0.9.1
 ^^^^^
 Monday July 16 2018
@@ -54,7 +112,6 @@ Tuesday Apr 24 2018
 * Add doc req to force newer pymacaroons to fix RTD builds
 * Fix dependency conflict for building docs
 
->>>>>>> 8a2d5bc35a302a970244b3c307a4f47deac0af63
 0.7.3
 ^^^^^
 Tuesday Feb 20 2018
@@ -103,20 +160,6 @@ Fri Sept 29 2017
 * Make Application.upgrade_charm upgrade resources (#158)
 * Expand integration tests to use stable/edge versions of juju (#155)
 * Move docs to ReadTheDocs (https://pythonlibjuju.readthedocs.io/en/latest/)
-<<<<<<< HEAD
-
-0.6.1
-^^^^^
-Fri Sept 29 2017
-
-* Fix failure when controller supports newer facade version (#145)
-* Fix test failures (#163)
-* Fix SSH key handling when adding a new model (#161)
-* Make Application.upgrade_charm upgrade resources (#158)
-* Expand integration tests to use stable/edge versions of juju (#155)
-* Move docs to ReadTheDocs (https://pythonlibjuju.readthedocs.io/en/latest/)
-=======
->>>>>>> 8a2d5bc35a302a970244b3c307a4f47deac0af63
 
 0.6.0
 ^^^^^

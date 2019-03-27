@@ -122,7 +122,8 @@ class Unit(model.ModelEntity):
         """Run command on this unit.
 
         :param str command: The command to run
-        :param int timeout: Time, in seconds, to wait before command is considered failed
+        :param int timeout: Time, in seconds, to wait before command is
+        considered failed
         :returns: A :class:`juju.action.Action` instance.
 
         """
@@ -148,7 +149,7 @@ class Unit(model.ModelEntity):
         """Run an action on this unit.
 
         :param str action_name: Name of action to run
-        :param \*\*params: Action parameters
+        :param **params: Action parameters
         :returns: A :class:`juju.action.Action` instance.
 
         Note that this only enqueues the action.  You will need to call
@@ -186,7 +187,8 @@ class Unit(model.ModelEntity):
         :param str destination: Remote destination of transferred files
         :param str user: Remote username
         :param bool proxy: Proxy through the Juju API server
-        :param str scp_opts: Additional options to the `scp` command
+        :param scp_opts: Additional options to the `scp` command
+        :type scp_opts: str or list
         """
         await self.machine.scp_to(source, destination, user=user, proxy=proxy,
                                   scp_opts=scp_opts)
@@ -199,7 +201,8 @@ class Unit(model.ModelEntity):
         :param str destination: Local destination of transferred files
         :param str user: Remote username
         :param bool proxy: Proxy through the Juju API server
-        :param str scp_opts: Additional options to the `scp` command
+        :param scp_opts: Additional options to the `scp` command
+        :type scp_opts: str or list
         """
         await self.machine.scp_from(source, destination, user=user,
                                     proxy=proxy, scp_opts=scp_opts)

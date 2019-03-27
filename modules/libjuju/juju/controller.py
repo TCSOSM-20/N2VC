@@ -30,7 +30,8 @@ class Controller:
             `juju.client.connection.Connection.MAX_FRAME_SIZE`
         :param bakery_client httpbakery.Client: The bakery client to use
             for macaroon authorization.
-        :param jujudata JujuData: The source for current controller information.
+        :param jujudata JujuData: The source for current controller
+        information.
         """
         self._connector = connector.Connector(
             loop=loop,
@@ -169,7 +170,7 @@ class Controller:
         await self._connector.disconnect()
 
     async def add_credential(self, name=None, credential=None, cloud=None,
-                             owner=None):
+                             owner=None, force=False):
         """Add or update a credential to the controller.
 
         :param str name: Name of new credential. If None, the default
@@ -181,6 +182,9 @@ class Controller:
             Defaults to the same cloud as the controller.
         :param str owner: Username that will own the credential. Defaults to
             the current user.
+        :param bool force: Force indicates whether the update should be forced.
+            It's only supported for facade v3 or later.
+            Defaults to false.
         :returns: Name of credential that was uploaded.
         """
         if not cloud:
@@ -193,7 +197,8 @@ class Controller:
             raise errors.JujuError('Name must be provided for credential')
 
         if not credential:
-            name, credential = self._connector.jujudata.load_credential(cloud, name)
+            name, credential = self._connector.jujudata.load_credential(cloud,
+                                                                        name)
             if credential is None:
                 raise errors.JujuError(
                     'Unable to find credential: {}'.format(name))
@@ -215,12 +220,19 @@ class Controller:
 
         log.debug('Uploading credential %s', name)
         cloud_facade = client.CloudFacade.from_connection(self.connection())
-        await cloud_facade.UpdateCredentials([
+        tagged_credentials = [
             client.UpdateCloudCredential(
                 tag=tag.credential(cloud, tag.untag('user-', owner), name),
                 credential=credential,
-            )])
-
+            )]
+        if cloud_facade.version >= 3:
+            # UpdateCredentials was renamed to UpdateCredentialsCheckModels
+            # in facade version 3.
+            await cloud_facade.UpdateCredentialsCheckModels(
+                credentials=tagged_credentials, force=force,
+            )
+        else:
+            await cloud_facade.UpdateCredentials(tagged_credentials)
         return name
 
     async def add_model(
@@ -288,10 +300,12 @@ class Controller:
 
         return model
 
-    async def destroy_models(self, *models):
+    async def destroy_models(self, *models, destroy_storage=False):
         """Destroy one or more models.
 
-        :param str \*models: Names or UUIDs of models to destroy
+        :param str *models: Names or UUIDs of models to destroy
+        :param bool destroy_storage: Whether or not to destroy storage when
+            destroying the models. Defaults to false.
 
         """
         uuids = await self.model_uuids()
@@ -307,10 +321,15 @@ class Controller:
             ', '.join(models)
         )
 
-        await model_facade.DestroyModels([
-            client.Entity(tag.model(model))
-            for model in models
-        ])
+        if model_facade.version >= 5:
+            params = [
+                client.DestroyModelParams(model_tag=tag.model(model),
+                                          destroy_storage=destroy_storage)
+                for model in models]
+        else:
+            params = [client.Entity(tag.model(model)) for model in models]
+
+        await model_facade.DestroyModels(params)
     destroy_model = destroy_models
 
     async def add_user(self, username, password=None, display_name=None):
@@ -323,12 +342,14 @@ class Controller:
         """
         if not display_name:
             display_name = username
-        user_facade = client.UserManagerFacade.from_connection(self.connection())
+        user_facade = client.UserManagerFacade.from_connection(
+            self.connection())
         users = [client.AddUser(display_name=display_name,
                                 username=username,
                                 password=password)]
-        await user_facade.AddUser(users)
-        return await self.get_user(username)
+        results = await user_facade.AddUser(users)
+        secret_key = results.results[0].secret_key
+        return await self.get_user(username, secret_key=secret_key)
 
     async def remove_user(self, username):
         """Remove a user from this controller.
@@ -345,9 +366,23 @@ class Controller:
         :param str password: New password
 
         """
-        user_facade = client.UserManagerFacade.from_connection(self.connection())
+        user_facade = client.UserManagerFacade.from_connection(
+            self.connection())
         entity = client.EntityPassword(password, tag.user(username))
         return await user_facade.SetPassword([entity])
+
+    async def reset_user_password(self, username):
+        """Reset user password.
+
+        :param str username: Username
+        :returns: A :class:`~juju.user.User` instance
+        """
+        user_facade = client.UserManagerFacade.from_connection(
+            self.connection())
+        entity = client.Entity(tag.user(username))
+        results = await user_facade.ResetPassword([entity])
+        secret_key = results.results[0].secret_key
+        return await self.get_user(username, secret_key=secret_key)
 
     async def destroy(self, destroy_all_models=False):
         """Destroy this controller.
@@ -366,7 +401,8 @@ class Controller:
         :param str username: Username
 
         """
-        user_facade = client.UserManagerFacade.from_connection(self.connection())
+        user_facade = client.UserManagerFacade.from_connection(
+            self.connection())
         entity = client.Entity(tag.user(username))
         return await user_facade.DisableUser([entity])
 
@@ -374,7 +410,8 @@ class Controller:
         """Re-enable a previously disabled user.
 
         """
-        user_facade = client.UserManagerFacade.from_connection(self.connection())
+        user_facade = client.UserManagerFacade.from_connection(
+            self.connection())
         entity = client.Entity(tag.user(username))
         return await user_facade.EnableUser([entity])
 
@@ -439,7 +476,7 @@ class Controller:
     def get_payloads(self, *patterns):
         """Return list of known payloads.
 
-        :param str \*patterns: Patterns to match against
+        :param str *patterns: Patterns to match against
 
         Each pattern will be checked against the following info in Juju::
 
@@ -488,10 +525,12 @@ class Controller:
         await model._connect_direct(**kwargs)
         return model
 
-    async def get_user(self, username):
+    async def get_user(self, username, secret_key=None):
         """Get a user by name.
 
         :param str username: Username
+        :param str secret_key: Issued by juju when add or reset user
+            password
         :returns: A :class:`~juju.user.User` instance
         """
         client_facade = client.UserManagerFacade.from_connection(
@@ -507,7 +546,7 @@ class Controller:
                 return None
             raise
         if response.results and response.results[0].result:
-            return User(self, response.results[0].result)
+            return User(self, response.results[0].result, secret_key=secret_key)
         return None
 
     async def get_users(self, include_disabled=False):
@@ -562,7 +601,8 @@ class Controller:
     async def grant_model(self, username, model_uuid, acl='read'):
         """Grant a user access to a model. Note that if the user
         already has higher permissions than the provided ACL,
-        this will do nothing (see revoke_model for a way to remove permissions).
+        this will do nothing (see revoke_model for a way to remove
+        permissions).
 
         :param str username: Username
         :param str model_uuid: The UUID of the model to change.
@@ -588,6 +628,6 @@ class Controller:
         model_facade = client.ModelManagerFacade.from_connection(
             self.connection())
         user = tag.user(username)
-        model = tag.model(self.info.uuid)
+        model = tag.model(model_uuid)
         changes = client.ModifyModelAccess(acl, 'revoke', model, user)
         return await model_facade.ModifyModelAccess([changes])

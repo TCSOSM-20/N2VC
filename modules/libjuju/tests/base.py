@@ -21,7 +21,6 @@ def is_bootstrapped():
         return False
 
 
-
 bootstrapped = pytest.mark.skipif(
     not is_bootstrapped(),
     reason='bootstrapped Juju environment required')

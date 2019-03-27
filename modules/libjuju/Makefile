@@ -13,7 +13,7 @@ clean:
 .tox:
 	tox -r --notest
 
-client:
+client: .tox
 ifndef SCHEMAGEN
 	$(error "schemagen is not available, please install from https://github.com/juju/schemagen")
 endif
@@ -21,6 +21,10 @@ endif
 
 test:
 	tox
+
+.PHONY: lint
+lint:
+	tox -e lint --notest
 
 docs: .tox
 	$(PIP) install -r docs/requirements.txt
@@ -30,7 +34,9 @@ docs: .tox
 
 release:
 	git fetch --tags
-	$(PY) setup.py sdist upload
+	rm dist/*.tar.gz
+	$(PY) setup.py sdist
+	$(BIN)/twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
 	git tag ${VERSION}
 	git push --tags
 

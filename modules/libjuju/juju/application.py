@@ -131,6 +131,31 @@ class Application(model.ModelEntity):
 
     add_units = add_unit
 
+    async def scale(self, scale=None, scale_change=None):
+        """
+        Set or adjust the scale of this (K8s) application.
+
+        One or the other of scale or scale_change must be provided.
+
+        :param int scale: Scale to which to set this application.
+        :param int scale_change: Amount by which to adjust the scale of this
+            application (can be positive or negative).
+        """
+        app_facade = client.ApplicationFacade.from_connection(self.connection)
+
+        if (scale, scale_change) == (None, None):
+            raise ValueError('Must provide either scale or scale_change')
+
+        log.debug(
+            'Scaling application %s %s %s',
+            self.name, 'to' if scale else 'by', scale or scale_change)
+
+        await app_facade.ScaleApplications([
+            client.ScaleApplicationParam(application_tag=self.tag,
+                                         scale=scale,
+                                         scale_change=scale_change)
+        ])
+
     def allocate(self, budget, value):
         """Allocate budget to this application.
 
@@ -247,14 +272,24 @@ class Application(model.ModelEntity):
             actions = {k: v['description'] for k, v in actions.items()}
         return actions
 
-    def get_resources(self, details=False):
+    async def get_resources(self):
         """Return resources for this application.
 
-        :param bool details: Include detailed info about resources used by each
-            unit
-
+        Returns a dict mapping resource name to
+        :class:`~juju._definitions.CharmResource` instances.
         """
-        raise NotImplementedError()
+        facade = client.ResourcesFacade.from_connection(self.connection)
+        response = await facade.ListResources([client.Entity(self.tag)])
+
+        resources = dict()
+        for result in response.results:
+            for resource in result.charm_store_resources or []:
+                resources[resource.name] = resource
+            for resource in result.resources or []:
+                if resource.charmresource:
+                    resource = resource.charmresource
+                    resources[resource.name] = resource
+        return resources
 
     async def run(self, command, timeout=None):
         """Run command on all units for this application.
@@ -311,7 +346,8 @@ class Application(model.ModelEntity):
         """
         Restore application config to default values.
 
-        :param list to_default: A list of config options to be reset to their default value.
+        :param list to_default: A list of config options to be reset to their
+        default value.
         """
         app_facade = client.ApplicationFacade.from_connection(self.connection)
 

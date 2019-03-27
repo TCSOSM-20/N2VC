@@ -805,7 +805,7 @@ class Model:
                         results = await utils.run_with_interrupt(
                             allwatcher.Next(),
                             self._watch_stopping,
-                            self._connector.loop)
+                            loop=self._connector.loop)
                     except JujuAPIError as e:
                         if 'watcher was stopped' not in str(e):
                             raise
@@ -1094,7 +1094,7 @@ class Model:
         (optional) list of existing subnet CIDRs with it.
 
         :param str name: Name of the space
-        :param \*cidrs: Optional list of existing subnet CIDRs
+        :param *cidrs: Optional list of existing subnet CIDRs
 
         """
         raise NotImplementedError()
@@ -1115,7 +1115,7 @@ class Model:
 
         :param str cidr_or_id: CIDR or provider ID of the existing subnet
         :param str space: Network space with which to associate
-        :param str \*zones: Zone(s) in which the subnet resides
+        :param str *zones: Zone(s) in which the subnet resides
 
         """
         raise NotImplementedError()
@@ -1129,7 +1129,7 @@ class Model:
     def block(self, *commands):
         """Add a new block to this model.
 
-        :param str \*commands: The commands to block. Valid values are
+        :param str *commands: The commands to block. Valid values are
             'all-changes', 'destroy-model', 'remove-object'
 
         """
@@ -1166,7 +1166,7 @@ class Model:
 
         :param str name: Name to give the storage pool
         :param str provider_type: Pool provider type
-        :param \*\*pool_config: key/value pool configuration pairs
+        :param **pool_config: key/value pool configuration pairs
 
         """
         raise NotImplementedError()
@@ -1215,7 +1215,7 @@ class Model:
             self, entity_url, application_name=None, bind=None, budget=None,
             channel=None, config=None, constraints=None, force=False,
             num_units=1, plan=None, resources=None, series=None, storage=None,
-            to=None):
+            to=None, devices=None):
         """Deploy a new service or bundle.
 
         :param str entity_url: Charm or bundle url
@@ -1266,7 +1266,8 @@ class Model:
         if is_local:
             entity_id = entity_url.replace('local:', '')
         else:
-            entity = await self.charmstore.entity(entity_url, channel=channel)
+            entity = await self.charmstore.entity(entity_url, channel=channel,
+                                                  include_stats=False)
             entity_id = entity['Id']
 
         client_facade = client.ClientFacade.from_connection(self.connection())
@@ -1304,7 +1305,7 @@ class Model:
                 # actually support them yet anyway
                 resources = await self._add_store_resources(application_name,
                                                             entity_id,
-                                                            entity)
+                                                            entity=entity)
             else:
                 if not application_name:
                     metadata = yaml.load(metadata_path.read_text())
@@ -1330,13 +1331,16 @@ class Model:
                 storage=storage,
                 channel=channel,
                 num_units=num_units,
-                placement=parse_placement(to)
+                placement=parse_placement(to),
+                devices=devices,
             )
 
-    async def _add_store_resources(self, application, entity_url, entity=None):
+    async def _add_store_resources(self, application, entity_url,
+                                   overrides=None, entity=None):
         if not entity:
             # avoid extra charm store call if one was already made
-            entity = await self.charmstore.entity(entity_url)
+            entity = await self.charmstore.entity(entity_url,
+                                                  include_stats=False)
         resources = [
             {
                 'description': resource['Description'],
@@ -1349,6 +1353,17 @@ class Model:
                 'origin': 'store',
             } for resource in entity['Meta']['resources']
         ]
+
+        if overrides:
+            names = {r['name'] for r in resources}
+            unknown = overrides.keys() - names
+            if unknown:
+                raise JujuError('Unrecognized resource{}: {}'.format(
+                    's' if len(unknown) > 1 else '',
+                    ', '.join(unknown)))
+            for resource in resources:
+                if resource['name'] in overrides:
+                    resource['revision'] = overrides[resource['name']]
 
         if not resources:
             return None
@@ -1366,7 +1381,8 @@ class Model:
 
     async def _deploy(self, charm_url, application, series, config,
                       constraints, endpoint_bindings, resources, storage,
-                      channel=None, num_units=None, placement=None):
+                      channel=None, num_units=None, placement=None,
+                      devices=None):
         """Logic shared between `Model.deploy` and `BundleHandler.deploy`.
         """
         log.info('Deploying %s', charm_url)
@@ -1390,7 +1406,8 @@ class Model:
             num_units=num_units,
             resources=resources,
             storage=storage,
-            placement=placement
+            placement=placement,
+            devices=devices,
         )
         result = await app_facade.Deploy([app])
         errors = [r.error.message for r in result.results if r.error]
@@ -1471,18 +1488,20 @@ class Model:
         client_facade = client.ClientFacade.from_connection(self.connection())
         result = await client_facade.GetModelConstraints()
 
-        # GetModelConstraints returns GetConstraintsResults which has a 'constraints'
-        # attribute. If no constraints have been set GetConstraintsResults.constraints
-        # is None. Otherwise GetConstraintsResults.constraints has an attribute for each
-        # possible constraint, each of these in turn will be None if they have not been
+        # GetModelConstraints returns GetConstraintsResults which has a
+        # 'constraints' attribute. If no constraints have been set
+        # GetConstraintsResults.constraints is None. Otherwise
+        # GetConstraintsResults.constraints has an attribute for each possible
+        # constraint, each of these in turn will be None if they have not been
         # set.
         if result.constraints:
-           constraint_types = [a for a in dir(result.constraints)
-                               if a in Value._toSchema.keys()]
-           for constraint in constraint_types:
-               value = getattr(result.constraints, constraint)
-               if value is not None:
-                   constraints[constraint] = getattr(result.constraints, constraint)
+            constraint_types = [a for a in dir(result.constraints)
+                                if a in Value._toSchema.keys()]
+            for constraint in constraint_types:
+                value = getattr(result.constraints, constraint)
+                if value is not None:
+                    constraints[constraint] = getattr(result.constraints,
+                                                      constraint)
         return constraints
 
     def import_ssh_key(self, identity):
@@ -1578,7 +1597,7 @@ class Model:
     def remove_machine(self, *machine_ids):
         """Remove a machine from this model.
 
-        :param str \*machine_ids: Ids of the machines to remove
+        :param str *machine_ids: Ids of the machines to remove
 
         """
         raise NotImplementedError()
@@ -1755,7 +1774,7 @@ class Model:
     def unblock(self, *commands):
         """Unblock an operation that would alter this model.
 
-        :param str \*commands: The commands to unblock. Valid values are
+        :param str *commands: The commands to unblock. Valid values are
             'all-changes', 'destroy-model', 'remove-object'
 
         """
@@ -1764,7 +1783,7 @@ class Model:
     def unset_config(self, *keys):
         """Unset configuration on this model.
 
-        :param str \*keys: The keys to unset
+        :param str *keys: The keys to unset
 
         """
         raise NotImplementedError()
@@ -1804,7 +1823,7 @@ class Model:
     async def get_metrics(self, *tags):
         """Retrieve metrics.
 
-        :param str \*tags: Tags of entities from which to retrieve metrics.
+        :param str *tags: Tags of entities from which to retrieve metrics.
             No tags retrieves the metrics of all units in the model.
         :return: Dictionary of unit_name:metrics
 
@@ -1863,6 +1882,8 @@ class BundleHandler:
         for unit_name, unit in model.units.items():
             app_units = self._units_by_app.setdefault(unit.application, [])
             app_units.append(unit_name)
+        self.bundle_facade = client.BundleFacade.from_connection(
+            model.connection())
         self.client_facade = client.ClientFacade.from_connection(
             model.connection())
         self.app_facade = client.ApplicationFacade.from_connection(
@@ -1920,11 +1941,11 @@ class BundleHandler:
         return bundle
 
     async def fetch_plan(self, entity_id):
-        is_local = not entity_id.startswith('cs:')
+        is_store_url = entity_id.startswith('cs:')
 
-        if is_local and os.path.isfile(entity_id):
+        if not is_store_url and os.path.isfile(entity_id):
             bundle_yaml = Path(entity_id).read_text()
-        elif is_local and os.path.isdir(entity_id):
+        elif not is_store_url and os.path.isdir(entity_id):
             bundle_yaml = (Path(entity_id) / "bundle.yaml").read_text()
         else:
             bundle_yaml = await self.charmstore.files(entity_id,
@@ -1933,7 +1954,7 @@ class BundleHandler:
         self.bundle = yaml.safe_load(bundle_yaml)
         self.bundle = await self._handle_local_charms(self.bundle)
 
-        self.plan = await self.client_facade.GetBundleChanges(
+        self.plan = await self.bundle_facade.GetChanges(
             yaml.dump(self.bundle))
 
         if self.plan.errors:
@@ -2049,7 +2070,7 @@ class BundleHandler:
         return await self.model.add_relation(*endpoints)
 
     async def deploy(self, charm, series, application, options, constraints,
-                     storage, endpoint_bindings, resources):
+                     storage, endpoint_bindings, *args):
         """
         :param charm string:
             Charm holds the URL of the charm to be used to deploy this
@@ -2074,17 +2095,35 @@ class BundleHandler:
         :param endpoint_bindings map[string]string:
             EndpointBindings holds the optional endpoint bindings
 
+        :param devices map[string]string:
+            Devices holds the optional devices constraints.
+            (Only given on Juju 2.5+)
+
         :param resources map[string]int:
             Resources identifies the revision to use for each resource
             of the application's charm.
+
+        :param num_units int:
+            NumUnits holds the number of units required.  For IAAS models, this
+            will be 0 and separate AddUnitChanges will be used.  For Kubernetes
+            models, this will be used to scale the application.
+            (Only given on Juju 2.5+)
         """
         # resolve indirect references
         charm = self.resolve(charm)
-        # the bundle plan doesn't actually do anything with resources, even
-        # though it ostensibly gives us something (None) for that param
+
+        if len(args) == 1:
+            # Juju 2.4 and below only sends the resources
+            resources = args[0]
+            devices, num_units = None, None
+        else:
+            # Juju 2.5+ sends devices before resources, as well as num_units
+            # There might be placement but we need to ignore that.
+            devices, resources, num_units = args[:3]
+
         if not charm.startswith('local:'):
-            resources = await self.model._add_store_resources(application,
-                                                              charm)
+            resources = await self.model._add_store_resources(
+                application, charm, overrides=resources)
         await self.model._deploy(
             charm_url=charm,
             application=application,
@@ -2094,6 +2133,8 @@ class BundleHandler:
             endpoint_bindings=endpoint_bindings,
             resources=resources,
             storage=storage,
+            devices=devices,
+            num_units=num_units,
         )
         return application
 
@@ -2124,6 +2165,20 @@ class BundleHandler:
             count=1,
             to=placement,
         )
+
+    async def scale(self, application, scale):
+        """
+        Handle a change of scale to a k8s application.
+
+        :param string application:
+            Application holds the application placeholder name for which a unit
+            is added.
+
+        :param int scale:
+            New scale value to use.
+        """
+        application = self.resolve(application)
+        return await self.model.applications[application].scale(scale=scale)
 
     async def expose(self, application):
         """
@@ -2160,9 +2215,9 @@ class CharmStore:
     """
     Async wrapper around theblues.charmstore.CharmStore
     """
-    def __init__(self, loop):
+    def __init__(self, loop, cs_timeout=20):
         self.loop = loop
-        self._cs = theblues.charmstore.CharmStore(timeout=5)
+        self._cs = theblues.charmstore.CharmStore(timeout=cs_timeout)
 
     def __getattr__(self, name):
         """
@@ -2205,9 +2260,9 @@ class CharmArchiveGenerator:
 
         Ignored::
 
-            * build/\* - This is used for packing the charm itself and any
+            * build/* - This is used for packing the charm itself and any
                           similar tasks.
-            * \*/.\*    - Hidden files are all ignored for now.  This will most
+            * */.*    - Hidden files are all ignored for now.  This will most
                           likely be changed into a specific ignore list
                           (.bzr, etc)
 
