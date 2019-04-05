@@ -230,6 +230,25 @@ def create_lxd_container(public_key=None, name="test_name"):
             )
         )
 
+    try:
+        waitcount = 0
+        while waitcount <= 5:
+            if is_sshd_running(container):
+                break
+            waitcount += 1
+            time.sleep(1)
+        if waitcount >= 5:
+            debug("couldn't detect sshd running")
+            raise Exception("Unable to verify container sshd")
+
+    except Exception as ex:
+        debug(
+            "Error checking sshd status on {}: {}".format(
+                test_machine,
+                ex,
+            )
+        )
+
     # HACK: We need to give sshd a chance to bind to the interface,
     # and pylxd's container.execute seems to be broken and fails and/or
     # hangs trying to properly check if the service is up.
@@ -244,6 +263,28 @@ def create_lxd_container(public_key=None, name="test_name"):
         raise Exception("Unable to verify container network")
 
     return container
+
+
+def is_sshd_running(container):
+    """Check if sshd is running in the container.
+
+    Check to see if the sshd process is running and listening on port 22.
+
+    :param container: The container to check
+    :return boolean: True if sshd is running.
+    """
+    debug("Container: {}".format(container))
+    try:
+        (rc, stdout, stderr) = container.execute(
+            ["service", "ssh", "status"]
+        )
+        # If the status is a) found and b) running, the exit code will be 0
+        if rc == 0:
+            return True
+    except Exception as ex:
+        debug("Failed to check sshd service status: {}".format(ex))
+
+    return False
 
 
 def destroy_lxd_container(container):
@@ -893,11 +934,20 @@ class TestN2VC(object):
             self._running = False
             self._stopping = True
 
+            # Destroy the network service
+            try:
+                await self.n2vc.DestroyNetworkService(self.ns_name)
+            except Exception as e:
+                debug(
+                    "Error Destroying Network Service \"{}\": {}".format(
+                        self.ns_name,
+                        e,
+                    )
+                )
+
+            # Wait for the applications to be removed and delete the containers
             for application in self.charms:
                 try:
-                    await self.n2vc.RemoveCharms(self.ns_name, application)
-
-                    await self.n2vc.DestroyNetworkService(self.ns_name)
 
                     while True:
                         # Wait for the application to be removed
@@ -907,7 +957,6 @@ class TestN2VC(object):
                             application,
                         ):
                             break
-                    await self.n2vc.DestroyNetworkService(self.ns_name)
 
                     # Need to wait for the charm to finish, because native charms
                     if self.state[application]['container']:
@@ -1118,6 +1167,14 @@ class TestN2VC(object):
         if self.state[application]['done']:
             debug("{} is done".format(application))
             return
+
+        if status in ['error']:
+            # To test broken charms, if a charm enters an error state we should
+            # end the test
+            debug("{} is in an error state, stop the test.".format(application))
+            # asyncio.ensure_future(self.stop())
+            self.state[application]['done'] = True
+            assert False
 
         if status in ["blocked"] and self.isproxy(application):
             if self.state[application]['phase'] == "deploy":

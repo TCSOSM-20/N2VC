@@ -109,7 +109,14 @@ class TestCharm(base.TestN2VC):
                 juju:
                     charm: metrics-proxy-ci
                     proxy: true
-    """
+                initial-config-primitive:
+                -   seq: '1'
+                    name: run
+                    parameter:
+                    -   name: command
+                        data-type: STRING
+                        value: hostname
+"""
 
     # @pytest.mark.serial
     @pytest.mark.asyncio

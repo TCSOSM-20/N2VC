@@ -13,9 +13,9 @@ class TestCharm(base.TestN2VC):
     NSD_YAML = """
     nsd:nsd-catalog:
         nsd:
-        -   id: charmnative-ns
-            name: charmnative-ns
-            short-name: charmnative-ns
+        -   id: nonstring-ns
+            name: nonstring-ns
+            short-name: nonstring-ns
             description: NS with 1 VNFs charmnative-vnf connected by datanet and mgmtnet VLs
             version: '1.0'
             logo: osm.png
@@ -143,5 +143,5 @@ class TestCharm(base.TestN2VC):
                 print("Waiting for test to finish...")
                 await asyncio.sleep(15)
             logging.debug("test_charm_non_string_parameter stopped")
-
+            # assert False
         return 'ok'

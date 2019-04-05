@@ -137,5 +137,4 @@ class TestCharm(base.TestN2VC):
                 await asyncio.sleep(15)
 
             print("test_charm_native stopped")
-
         return 'ok'
