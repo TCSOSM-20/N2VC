@@ -57,13 +57,12 @@ logging.getLogger('juju.machine').setLevel(logging.WARN)
 class VCAMonitor(ModelObserver):
     """Monitor state changes within the Juju Model."""
     log = None
-    ns_name = None
-    applications = {}
 
     def __init__(self, ns_name):
         self.log = logging.getLogger(__name__)
 
         self.ns_name = ns_name
+        self.applications = {}
 
     def AddApplication(self, application_name, callback, *callback_args):
         if application_name not in self.applications:
