@@ -4,9 +4,9 @@ description: A native VNF charm
 maintainer: Adam Israel <adam.israel@canonical.com>
 subordinate: false
 series: ['xenial']
-provides:
-    db:
-        interface: mysql
-requires:
-    app:
-        interface: mysql
+# provides:
+#     db:
+#         interface: mysql
+# requires:
+#     app:
+#         interface: mysql

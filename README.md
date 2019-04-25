@@ -55,12 +55,19 @@ A basic test has been written to exercise the functionality of the library, and 
 Export a few environment variables so the test knows where to find the VCA, and the compiled pingpong charm from the devops repository.
 
 ```bash
+# The directory where the Juju configuration is stored
+export VCA_PATH=~/.local/share/juju
+
 # You can find the ip of the VCA by running `juju status -m controller` and looking for the DNS for Machine 0
-export VCA_HOST=
+export VCA_HOST=`juju show-controller --format=json | jq -r '.osm["details"]["api-endpoints"][0]'|awk -F: '{print $1}'`
 export VCA_PORT=17070
+
 # You can find these variables in ~/.local/share/juju/accounts.yaml
 export VCA_USER=admin
 export VCA_SECRET=PASSWORD
+
+export LXD_HOST=`ifconfig lxdbr0  | grep 'inet '| cut -d: -f2 | awk '{ print $2}'`
+export LXD_SECRET=
 ```
 
 ### Run the test(s)

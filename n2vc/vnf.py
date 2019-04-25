@@ -147,22 +147,34 @@ class N2VC:
                  secret=None,
                  artifacts=None,
                  loop=None,
+                 juju_public_key=None,
+                 ca_cert=None,
                  ):
         """Initialize N2VC
-
-        :param vcaconfig dict A dictionary containing the VCA configuration
-
-        :param artifacts str The directory where charms required by a vnfd are
+        :param log obj: The logging object to log to
+        :param server str: The IP Address or Hostname of the Juju controller
+        :param port int: The port of the Juju Controller
+        :param user str: The Juju username to authenticate with
+        :param secret str: The Juju password to authenticate with
+        :param artifacts str: The directory where charms required by a vnfd are
             stored.
+        :param loop obj: The loop to use.
+        :param juju_public_key str: The contents of the Juju public SSH key
+        :param ca_cert str: The CA certificate to use to authenticate
+
 
         :Example:
-        n2vc = N2VC(vcaconfig={
-            'secret': 'MzI3MDJhOTYxYmM0YzRjNTJiYmY1Yzdm',
-            'user': 'admin',
-            'ip-address': '10.44.127.137',
-            'port': 17070,
-            'artifacts': '/path/to/charms'
-        })
+        client = n2vc.vnf.N2VC(
+            log=log,
+            server='10.1.1.28',
+            port=17070,
+            user='admin',
+            secret='admin',
+            artifacts='/app/storage/myvnf/charms',
+            loop=loop,
+            juju_public_key='<contents of the juju public key>',
+            ca_cert='<contents of CA certificate>',
+        )
         """
 
         # Initialize instance-level variables
@@ -188,6 +200,12 @@ class N2VC:
         self.port = 17070
         self.username = ""
         self.secret = ""
+
+        self.juju_public_key = juju_public_key
+        if juju_public_key:
+            self._create_juju_public_key(juju_public_key)
+
+        self.ca_cert = ca_cert
 
         if log:
             self.log = log
@@ -220,6 +238,25 @@ class N2VC:
     def __del__(self):
         """Close any open connections."""
         yield self.logout()
+
+    def _create_juju_public_key(self, public_key):
+        """Recreate the Juju public key on disk.
+
+        Certain libjuju commands expect to be run from the same machine as Juju
+         is bootstrapped to. This method will write the public key to disk in
+         that location: ~/.local/share/juju/ssh/juju_id_rsa.pub
+        """
+        if public_key is None or len(public_key) == 0:
+            return
+            
+        path = "{}/.local/share/juju/ssh".format(
+            os.path.expanduser('~'),
+        )
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+            with open('{}/juju_id_rsa.pub'.format(path), 'w') as f:
+                f.write(public_key)
 
     def notify_callback(self, model_name, application_name, status, message,
                         callback=None, *callback_args):
@@ -1089,7 +1126,6 @@ class N2VC:
 
         self.log.debug("JujuApi: Logging into controller")
 
-        cacert = None
         self.controller = Controller(loop=self.loop)
 
         if self.secret:
@@ -1105,7 +1141,7 @@ class N2VC:
                 endpoint=self.endpoint,
                 username=self.user,
                 password=self.secret,
-                cacert=cacert,
+                cacert=self.ca_cert,
             )
             self.refcount['controller'] += 1
         else:

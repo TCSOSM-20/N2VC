@@ -11,6 +11,7 @@ from charms.reactive import (
     when_not,
 )
 import charms.sshproxy
+import os
 
 
 @when('sshproxy.configured')
@@ -31,6 +32,10 @@ def install_simple_proxy_charm():
 
 @when('actions.touch')
 def touch():
+    if not in_action_context():
+        clear_flag('actions.touch')
+        return
+
     err = ''
     try:
         filename = action_get('filename')
@@ -42,3 +47,8 @@ def touch():
         action_set({'output': result})
     finally:
         clear_flag('actions.touch')
+
+
+def in_action_context():
+    """Determine whether we're running on an action context."""
+    return 'JUJU_ACTION_UUID' in os.environ
