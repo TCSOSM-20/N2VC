@@ -246,9 +246,15 @@ class N2VC:
          is bootstrapped to. This method will write the public key to disk in
          that location: ~/.local/share/juju/ssh/juju_id_rsa.pub
         """
+        # Make sure that we have a public key before writing to disk
         if public_key is None or len(public_key) == 0:
-            return
-            
+            if 'OSM_VCA_PUBKEY' in os.environ:
+                public_key = os.getenv('OSM_VCA_PUBKEY', '')
+                if len(public_key == 0):
+                    return
+            else:
+                return
+
         path = "{}/.local/share/juju/ssh".format(
             os.path.expanduser('~'),
         )
