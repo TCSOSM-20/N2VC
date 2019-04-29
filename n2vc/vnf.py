@@ -443,11 +443,10 @@ class N2VC:
         # Register this application with the model-level event monitor #
         ################################################################
         if callback:
-            self.monitors[model_name].AddApplication(
+            self.log.debug("JujuApi: Registering callback for {}".format(
                 application_name,
-                callback,
-                *callback_args
-            )
+            ))
+            await self.Subscribe(model_name, application_name, callback, *callback_args)
 
         ########################################################
         # Check for specific machine placement (native charms) #
@@ -801,7 +800,7 @@ class N2VC:
             app = await self.get_application(model, application_name)
             if app:
                 # Remove this application from event monitoring
-                self.monitors[model_name].RemoveApplication(application_name)
+                await self.Unsubscribe(model_name, application_name)
 
                 # self.notify_callback(model_name, application_name, "removing", callback, *callback_args)
                 self.log.debug(
@@ -905,6 +904,33 @@ class N2VC:
         if app:
             return True
         return False
+
+    async def Subscribe(self, ns_name, application_name, callback, *callback_args):
+        """Subscribe to callbacks for an application.
+
+        :param ns_name str: The name of the Network Service
+        :param application_name str: The name of the application
+        :param callback obj: The callback method
+        :param callback_args list: The list of arguments to append to calls to
+            the callback method
+        """
+        self.monitors[ns_name].AddApplication(
+            application_name,
+            callback,
+            *callback_args
+        )
+
+    async def Unsubscribe(self, ns_name, application_name):
+        """Unsubscribe to callbacks for an application.
+
+        Unsubscribes the caller from notifications from a deployed application.
+
+        :param ns_name str: The name of the Network Service
+        :param application_name str: The name of the application
+        """
+        self.monitors[ns_name].RemoveApplication(
+            application_name,
+        )
 
     # Non-public methods
     async def add_relation(self, model_name, relation1, relation2):
