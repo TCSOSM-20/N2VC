@@ -740,8 +740,8 @@ class TestN2VC(object):
             )
 
             machine_spec = {
-                'host': hostname,
-                'user': 'ubuntu',
+                'hostname': hostname,
+                'username': 'ubuntu',
             }
 
         await self.n2vc.DeployCharms(

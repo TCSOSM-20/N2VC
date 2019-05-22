@@ -456,8 +456,8 @@ class N2VC:
             if all(k in machine_spec for k in ['host', 'user']):
                 # Enlist an existing machine as a Juju unit
                 machine = await model.add_machine(spec='ssh:{}@{}:{}'.format(
-                    machine_spec['user'],
-                    machine_spec['host'],
+                    machine_spec['username'],
+                    machine_spec['hostname'],
                     self.GetPrivateKeyPath(),
                 ))
                 to = machine.id
