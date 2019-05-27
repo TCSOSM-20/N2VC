@@ -339,6 +339,7 @@ class N2VC:
         # Loop through relations
         for cfg in configs:
             if 'juju' in cfg:
+                juju = cfg['juju']
                 if 'relation' in juju:
                     for rel in juju['relation']:
                         try:
