@@ -503,10 +503,19 @@ class N2VC:
             # Where to deploy the charm to.
             to=to,
         )
-
-        # Map the vdu id<->app name,
-        #
-        await self.Relate(model_name, vnfd)
+        #############################
+        # Map the vdu id<->app name #
+        #############################
+        try:
+            await self.Relate(model_name, vnfd)
+        except KeyError as ex:
+            # We don't currently support relations between NS and VNF/VDU charms
+            self.log.warn("[N2VC] Relations not supported: {}".format(ex))
+        except Exception as ex:
+            # This may happen if not all of the charms needed by the relation
+            # are ready. We can safely ignore this, because Relate will be
+            # retried when the endpoint of the relation is deployed.
+            self.log.warn("[N2VC] Relations not ready")
 
         # #######################################
         # # Execute initial config primitive(s) #
