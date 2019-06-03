@@ -287,9 +287,10 @@ class N2VC:
 
         vdu:
             ...
-            relation:
-            -   provides: dataVM:db
-                requires: mgmtVM:app
+            vca-relations:
+                relation:
+                -   provides: dataVM:db
+                    requires: mgmtVM:app
 
         This tells N2VC that the charm referred to by the dataVM vdu offers a relation named 'db', and the mgmtVM vdu has an 'app' endpoint that should be connected to a database.
 
@@ -341,7 +342,7 @@ class N2VC:
             if 'juju' in cfg:
                 juju = cfg['juju']
                 if 'relation' in juju:
-                    for rel in juju['relation']:
+                    for rel in juju['vca-relations']['relation']:
                         try:
 
                             # get the application name for the provides
