@@ -341,7 +341,7 @@ class N2VC:
         for cfg in configs:
             if 'juju' in cfg:
                 juju = cfg['juju']
-                if 'relation' in juju:
+                if 'vca-relations' in juju and 'relations' in juju['vca-relations']:
                     for rel in juju['vca-relations']['relation']:
                         try:
 
