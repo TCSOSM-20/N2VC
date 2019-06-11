@@ -27,6 +27,7 @@ setup(
         'theblues>=0.3.8,<1.0',
         'websockets>=4.0,<5.0',
         'paramiko',
+        'pyasn1>=0.4.4',
     ],
     include_package_data=True,
     maintainer='Adam Israel',
