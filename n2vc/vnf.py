@@ -287,7 +287,7 @@ class N2VC:
 
         vdu:
             ...
-            vca-relations:
+            vca-relationships:
                 relation:
                 -   provides: dataVM:db
                     requires: mgmtVM:app
@@ -341,8 +341,8 @@ class N2VC:
         for cfg in configs:
             if 'juju' in cfg:
                 juju = cfg['juju']
-                if 'vca-relations' in juju and 'relation' in juju['vca-relations']:
-                    for rel in juju['vca-relations']['relation']:
+                if 'vca-relationships' in juju and 'relation' in juju['vca-relationships']:
+                    for rel in juju['vca-relationships']['relation']:
                         try:
 
                             # get the application name for the provides

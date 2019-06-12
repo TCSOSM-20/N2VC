@@ -110,7 +110,7 @@ class TestCharm(base.TestN2VC):
                     juju:
                         charm: proxy-ci
                         proxy: true
-                        vca-relations:
+                        vca-relationships:
                             # Relation needs to map to the vdu providing or
                             # requiring, so that we can map to the deployed app.
                             relation:
