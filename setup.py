@@ -14,6 +14,8 @@
 
 from setuptools import setup, find_packages
 
+_description = 'OSM library implementing common interface towards VCA module'
+
 setup(
     name='N2VC',
     version_command=('git describe --match v* --tags --long --dirty',
@@ -28,7 +30,7 @@ setup(
     include_package_data=True,
     maintainer='Adam Israel',
     maintainer_email='adam.israel@canonical.com',
-    description=(''),
+    description=_description,
     url='',
     license='Apache 2',
     entry_points={
