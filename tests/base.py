@@ -1131,7 +1131,8 @@ class TestN2VC(object):
             return True
         except Exception as ex:
             debug("execute_initial_config_primitives exception: {}".format(ex))
-
+            raise ex
+            
         return False
 
     @classmethod
