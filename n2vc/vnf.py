@@ -47,6 +47,9 @@ class NetworkServiceDoesNotExist(Exception):
     """The Network Service being acted against does not exist."""
 
 
+class PrimitiveDoesNotExist(Exception):
+    """The Primitive being executed does not exist."""
+
 # Quiet the debug logging
 logging.getLogger('websockets.protocol').setLevel(logging.INFO)
 logging.getLogger('juju.client.connection').setLevel(logging.WARN)
@@ -723,16 +726,25 @@ class N2VC:
                     }
 
                     for primitive in sorted(primitives):
-                        uuids.append(
-                            await self.ExecutePrimitive(
-                                model_name,
-                                application_name,
-                                primitives[primitive]['name'],
-                                callback,
-                                callback_args,
-                                **primitives[primitive]['parameters'],
+                        try:
+                            # self.log.debug("Queuing action {}".format(primitives[primitive]['name']))
+                            uuids.append(
+                                await self.ExecutePrimitive(
+                                    model_name,
+                                    application_name,
+                                    primitives[primitive]['name'],
+                                    callback,
+                                    callback_args,
+                                    **primitives[primitive]['parameters'],
+                                )
                             )
-                        )
+                        except PrimitiveDoesNotExist as e:
+                            self.log.debug("Ignoring exception PrimitiveDoesNotExist: {}".format(e))
+                            pass
+                        except Exception as e:
+                            self.log.debug("XXXXXXXXXXXXXXXXXXXXXXXXX Unexpected exception: {}".format(e))
+                            raise e
+
             except N2VCPrimitiveExecutionFailed as e:
                 self.log.debug(
                     "[N2VC] Exception executing primitive: {}".format(e)
@@ -779,12 +791,22 @@ class N2VC:
             else:
                 app = await self.get_application(model, application_name)
                 if app:
+                    # Does this primitive exist?
+                    actions = await app.get_actions()
+
+                    if primitive not in actions.keys():
+                        raise PrimitiveDoesNotExist("Primitive {} does not exist".format(primitive))
+
                     # Run against the first (and probably only) unit in the app
                     unit = app.units[0]
                     if unit:
                         action = await unit.run_action(primitive, **params)
                         uuid = action.id
+        except PrimitiveDoesNotExist as e:
+            # Catch and raise this exception if it's thrown from the inner block
+            raise e
         except Exception as e:
+            # An unexpected exception was caught
             self.log.debug(
                 "Caught exception while executing primitive: {}".format(e)
             )
