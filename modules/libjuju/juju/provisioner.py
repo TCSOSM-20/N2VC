@@ -1,15 +1,26 @@
-from .client import client
-
-import paramiko
+# Copyright 2019 Canonical Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
 import os
 import re
-import tempfile
 import shlex
-from subprocess import (
-    CalledProcessError,
-)
+import tempfile
 import uuid
+from subprocess import CalledProcessError
 
+import paramiko
+
+from .client import client
 
 arches = [
     [re.compile(r"amd64|x86_64"), "amd64"],
@@ -18,6 +29,7 @@ arches = [
     [re.compile(r"aarch64"), "arm64"],
     [re.compile(r"ppc64|ppc64el|ppc64le"), "ppc64el"],
     [re.compile(r"s390x?"), "s390x"],
+
 ]
 
 
@@ -154,28 +166,20 @@ class SSHProvisioner:
             if the authentication fails
         """
 
-        # TODO: Test this on an image without the ubuntu user setup.
-
-        auth_user = self.user
         ssh = None
         try:
             # Run w/o allocating a pty, so we fail if sudo prompts for a passwd
             ssh = self._get_ssh_client(
                 self.host,
-                "ubuntu",
+                self.user,
                 self.private_key_path,
             )
-
             stdout, stderr = self._run_command(ssh, "sudo -n true", pty=False)
         except paramiko.ssh_exception.AuthenticationException as e:
             raise e
-        else:
-            auth_user = "ubuntu"
         finally:
             if ssh:
                 ssh.close()
-
-        # if the above fails, run the init script as the authenticated user
 
         # Infer the public key
         public_key = None
@@ -194,7 +198,7 @@ class SSHProvisioner:
         try:
             ssh = self._get_ssh_client(
                 self.host,
-                auth_user,
+                self.user,
                 self.private_key_path,
             )
 
@@ -317,10 +321,10 @@ class SSHProvisioner:
 
         client_facade = client.ClientFacade.from_connection(connection)
         results = await client_facade.ProvisioningScript(
-            data_dir,
-            disable_package_commands,
-            machine_id,
-            nonce,
+            data_dir=data_dir,
+            disable_package_commands=disable_package_commands,
+            machine_id=machine_id,
+            nonce=nonce,
         )
 
         self._run_configure_script(results.script)
