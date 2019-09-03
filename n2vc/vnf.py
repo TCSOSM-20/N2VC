@@ -1,3 +1,17 @@
+# Copyright 2019 Canonical Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import asyncio
 import logging
 import os
@@ -8,6 +22,7 @@ import ssl
 import subprocess
 import sys
 # import time
+from n2vc.provisioner import SSHProvisioner
 
 # FIXME: this should load the juju inside or modules without having to
 # explicitly install it. Check why it's not working.
@@ -17,9 +32,11 @@ path = os.path.join(path, "modules/libjuju/")
 if path not in sys.path:
     sys.path.insert(1, path)
 
+from juju.client import client
 from juju.controller import Controller
 from juju.model import ModelObserver
 from juju.errors import JujuAPIError, JujuError
+
 
 # We might need this to connect to the websocket securely, but test and verify.
 try:
@@ -31,6 +48,7 @@ except AttributeError:
 
 
 # Custom exceptions
+# Deprecated. Please use n2vc.exceptions namespace.
 class JujuCharmNotFound(Exception):
     """The Charm can't be found or is not readable."""
 
@@ -49,6 +67,7 @@ class NetworkServiceDoesNotExist(Exception):
 
 class PrimitiveDoesNotExist(Exception):
     """The Primitive being executed does not exist."""
+
 
 # Quiet the debug logging
 logging.getLogger('websockets.protocol').setLevel(logging.INFO)
@@ -152,8 +171,13 @@ class N2VC:
                  loop=None,
                  juju_public_key=None,
                  ca_cert=None,
+                 api_proxy=None
                  ):
         """Initialize N2VC
+
+        Initializes the N2VC object, allowing the caller to interoperate with the VCA.
+
+
         :param log obj: The logging object to log to
         :param server str: The IP Address or Hostname of the Juju controller
         :param port int: The port of the Juju Controller
@@ -164,7 +188,7 @@ class N2VC:
         :param loop obj: The loop to use.
         :param juju_public_key str: The contents of the Juju public SSH key
         :param ca_cert str: The CA certificate to use to authenticate
-
+        :param api_proxy str: The IP of the host machine
 
         :Example:
         client = n2vc.vnf.N2VC(
@@ -177,6 +201,7 @@ class N2VC:
             loop=loop,
             juju_public_key='<contents of the juju public key>',
             ca_cert='<contents of CA certificate>',
+            api_proxy='192.168.1.155'
         )
         """
 
@@ -186,6 +211,7 @@ class N2VC:
         self.controller = None
         self.connecting = False
         self.authenticated = False
+        self.api_proxy = api_proxy
 
         # For debugging
         self.refcount = {
@@ -203,12 +229,15 @@ class N2VC:
         self.port = 17070
         self.username = ""
         self.secret = ""
-
+        
         self.juju_public_key = juju_public_key
         if juju_public_key:
             self._create_juju_public_key(juju_public_key)
 
-        self.ca_cert = ca_cert
+        # TODO: Verify ca_cert is valid before using. VCA will crash
+        # if the ca_cert isn't formatted correctly.
+        # self.ca_cert = ca_cert
+        self.ca_cert = None
 
         if log:
             self.log = log
@@ -453,20 +482,6 @@ class N2VC:
             ))
             await self.Subscribe(model_name, application_name, callback, *callback_args)
 
-        ########################################################
-        # Check for specific machine placement (native charms) #
-        ########################################################
-        to = ""
-        if machine_spec.keys():
-            if all(k in machine_spec for k in ['host', 'user']):
-                # Enlist an existing machine as a Juju unit
-                machine = await model.add_machine(spec='ssh:{}@{}:{}'.format(
-                    machine_spec['username'],
-                    machine_spec['hostname'],
-                    self.GetPrivateKeyPath(),
-                ))
-                to = machine.id
-
         #######################################
         # Get the initial charm configuration #
         #######################################
@@ -483,11 +498,73 @@ class N2VC:
             {'<rw_mgmt_ip>': rw_mgmt_ip}
         )
 
-        self.log.debug("JujuApi: Deploying charm ({}/{}) from {}".format(
+        ########################################################
+        # Check for specific machine placement (native charms) #
+        ########################################################
+        to = ""
+        series = "xenial"
+
+        if machine_spec.keys():
+            if all(k in machine_spec for k in ['hostname', 'username']):
+
+                # Allow series to be derived from the native charm
+                series = None
+
+                self.log.debug("Provisioning manual machine {}@{}".format(
+                    machine_spec['username'],
+                    machine_spec['hostname'],
+                ))
+
+                """Native Charm support
+
+                Taking a bare VM (assumed to be an Ubuntu cloud image),
+                the provisioning process will:
+                - Create an ubuntu user w/sudo access
+                - Detect hardware
+                - Detect architecture
+                - Download and install Juju agent from controller
+                - Enable Juju agent
+                - Add an iptables rule to route traffic to the API proxy
+                """
+
+                to = await self.provision_machine(
+                    model_name=model_name,
+                    username=machine_spec['username'],
+                    hostname=machine_spec['hostname'],
+                    private_key_path=self.GetPrivateKeyPath(),
+                )
+                self.log.debug("Provisioned machine id {}".format(to))
+
+                # TODO: If to is none, raise an exception
+
+                # The native charm won't have the sshproxy layer, typically, but LCM uses the config primitive
+                # to interpret what the values are. That's a gap to fill.
+
+                """
+                The ssh-* config parameters are unique to the sshproxy layer,
+                which most native charms will not be aware of.
+
+                Setting invalid config parameters will cause the deployment to
+                fail.
+
+                For the moment, we will strip the ssh-* parameters from native
+                charms, until the feature gap is addressed in the information
+                model.
+                """
+
+                # Native charms don't include the ssh-* config values, so strip them
+                # from the initial_config, otherwise the deploy will raise an error.
+                # self.log.debug("Removing ssh-* from initial-config")
+                for k in ['ssh-hostname', 'ssh-username', 'ssh-password']:
+                    if k in initial_config:
+                        self.log.debug("Removing parameter {}".format(k))
+                        del initial_config[k]
+
+        self.log.debug("JujuApi: Deploying charm ({}/{}) from {} to {}".format(
             model_name,
             application_name,
             charm_path,
-            to=to,
+            to,
         ))
 
         ########################################################
@@ -501,12 +578,13 @@ class N2VC:
             application_name=application_name,
             # Proxy charms should use the current LTS. This will need to be
             # changed for native charms.
-            series='xenial',
+            series=series,
             # Apply the initial 'config' primitive during deployment
             config=initial_config,
             # Where to deploy the charm to.
             to=to,
         )
+
         #############################
         # Map the vdu id<->app name #
         #############################
@@ -841,7 +919,7 @@ class N2VC:
                 )
                 await app.remove()
 
-                await self.disconnect_model(self.monitors[model_name])
+                # await self.disconnect_model(self.monitors[model_name])
 
                 self.notify_callback(
                     model_name,
@@ -901,14 +979,53 @@ class N2VC:
             return False
 
         if not self.authenticated:
-            self.log.debug("Authenticating with Juju")
             await self.login()
+
+        models = await self.controller.list_models()
+        if ns_uuid in models:
+            model = await self.controller.get_model(ns_uuid)
+
+            for application in model.applications:
+                app = model.applications[application]
+
+                await self.RemoveCharms(ns_uuid, application)
+
+                self.log.debug("Unsubscribing Watcher for {}".format(application))
+                await self.Unsubscribe(ns_uuid, application)
+
+                self.log.debug("Waiting for application to terminate")
+                timeout = 30
+                try:
+                    await model.block_until(
+                        lambda: all(
+                            unit.workload_status in ['terminated'] for unit in app.units
+                        ),
+                        timeout=timeout
+                    )
+                except Exception as e:
+                    self.log.debug("Timed out waiting for {} to terminate.".format(application))
+
+            for machine in model.machines:
+                try:
+                    self.log.debug("Destroying machine {}".format(machine))
+                    await model.machines[machine].destroy(force=True)
+                except JujuAPIError as e:
+                    if 'does not exist' in str(e):
+                        # Our cached model may be stale, because the machine
+                        # has already been removed. It's safe to continue.
+                        continue
+                    else:
+                        self.log.debug("Caught exception: {}".format(e))
+                        raise e
 
         # Disconnect from the Model
         if ns_uuid in self.models:
-            await self.disconnect_model(self.models[ns_uuid])
+            self.log.debug("Disconnecting model {}".format(ns_uuid))
+            # await self.disconnect_model(self.models[ns_uuid])
+            await self.disconnect_model(ns_uuid)
 
         try:
+            self.log.debug("Destroying model {}".format(ns_uuid))
             await self.controller.destroy_models(ns_uuid)
         except JujuError:
             raise NetworkServiceDoesNotExist(
@@ -1254,10 +1371,81 @@ class N2VC:
     async def disconnect_model(self, model):
         self.log.debug("Disconnecting model {}".format(model))
         if model in self.models:
-            print("Disconnecting model")
-            await self.models[model].disconnect()
-            self.refcount['model'] -= 1
-            self.models[model] = None
+            try:
+                await self.models[model].disconnect()
+                self.refcount['model'] -= 1
+                self.models[model] = None
+            except Exception as e:
+                self.log.debug("Caught exception: {}".format(e))
+
+    async def provision_machine(self, model_name: str,
+                                hostname: str, username: str,
+                                private_key_path: str) -> int:
+        """Provision a machine.
+
+        This executes the SSH provisioner, which will log in to a machine via
+        SSH and prepare it for use with the Juju model
+
+        :param model_name str: The name of the model
+        :param hostname str: The IP or hostname of the target VM
+        :param user str: The username to login to
+        :param private_key_path str: The path to the private key that's been injected to the VM via cloud-init
+        :return machine_id int: Returns the id of the machine or None if provisioning fails
+        """
+        if not self.authenticated:
+            await self.login()
+
+        machine_id = None
+
+        if self.api_proxy:
+            self.log.debug("Instantiating SSH Provisioner for {}@{} ({})".format(
+                username,
+                hostname,
+                private_key_path
+            ))
+            provisioner = SSHProvisioner(
+                host=hostname,
+                user=username,
+                private_key_path=private_key_path,
+                log=self.log,
+            )
+
+            params = None
+            try:
+                params = provisioner.provision_machine()
+            except Exception as ex:
+                self.log.debug("caught exception from provision_machine: {}".format(ex))
+                return None
+
+            if params:
+                params.jobs = ['JobHostUnits']
+
+                model = await self.get_model(model_name)
+
+                connection = model.connection()
+
+                # Submit the request.
+                self.log.debug("Adding machine to model")
+                client_facade = client.ClientFacade.from_connection(connection)
+                results = await client_facade.AddMachines(params=[params])
+                error = results.machines[0].error
+                if error:
+                    raise ValueError("Error adding machine: %s" % error.message)
+
+                machine_id = results.machines[0].machine
+
+                # Need to run this after AddMachines has been called,
+                # as we need the machine_id
+                self.log.debug("Installing Juju agent")
+                await provisioner.install_agent(
+                    connection,
+                    params.nonce,
+                    machine_id,
+                    self.api_proxy,
+                )
+        else:
+            self.log.debug("Missing API Proxy")
+        return machine_id
 
     # async def remove_application(self, name):
     #     """Remove the application."""
