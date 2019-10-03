@@ -1,3 +1,19 @@
+<!--
+ Copyright 2019 Canonical Ltd.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+
 # N2VC Testing
 
 
@@ -21,7 +37,8 @@ Run `juju status -m controller` and capture the IP address of machine 0. This is
 export VCA_HOST=1.2.3.4
 export VCA_USER=admin
 export VCA_SECRET=admin
-
+export VCA_CACERT=$(juju controllers --format json | jq -r '.controllers["osm"]["ca-cert"]'| base64 | tr -d \\n)
+export VCA_PUBLIC_KEY=$(cat ~/.local/share/juju/ssh/juju_id_rsa.pub)
 
 # Running tests
 

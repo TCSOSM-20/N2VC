@@ -21,11 +21,7 @@ setup(
     packages=find_packages(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     install_requires=[
-        'macaroonbakery>=1.1,<2.0',
-        'pyRFC3339>=1.0,<2.0',
-        'pyyaml>=3.0,<4.0',
-        'theblues>=0.3.8,<1.0',
-        'websockets>=7.0,<8.0',
+        'juju',
         'paramiko',
         'pyasn1>=0.4.4',
     ],

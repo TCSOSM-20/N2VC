@@ -13,6 +13,8 @@
 #     limitations under the License.
 
 import asyncio
+import base64
+import binascii
 import logging
 import os
 import os.path
@@ -22,15 +24,16 @@ import ssl
 import subprocess
 import sys
 # import time
+import n2vc.exceptions
 from n2vc.provisioner import SSHProvisioner
 
 # FIXME: this should load the juju inside or modules without having to
 # explicitly install it. Check why it's not working.
 # Load our subtree of the juju library
-path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-path = os.path.join(path, "modules/libjuju/")
-if path not in sys.path:
-    sys.path.insert(1, path)
+# path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+# path = os.path.join(path, "modules/libjuju/")
+# if path not in sys.path:
+#     sys.path.insert(1, path)
 
 from juju.client import client
 from juju.controller import Controller
@@ -213,6 +216,11 @@ class N2VC:
         self.authenticated = False
         self.api_proxy = api_proxy
 
+        if log:
+            self.log = log
+        else:
+            self.log = logging.getLogger(__name__)
+
         # For debugging
         self.refcount = {
             'controller': 0,
@@ -229,20 +237,38 @@ class N2VC:
         self.port = 17070
         self.username = ""
         self.secret = ""
-        
+
         self.juju_public_key = juju_public_key
         if juju_public_key:
             self._create_juju_public_key(juju_public_key)
+        else:
+            self.juju_public_key = ''
 
         # TODO: Verify ca_cert is valid before using. VCA will crash
         # if the ca_cert isn't formatted correctly.
-        # self.ca_cert = ca_cert
-        self.ca_cert = None
+        def base64_to_cacert(b64string):
+            """Convert the base64-encoded string containing the VCA CACERT.
 
-        if log:
-            self.log = log
-        else:
-            self.log = logging.getLogger(__name__)
+            The input string....
+
+            """
+            try:
+                cacert = base64.b64decode(b64string).decode("utf-8")
+
+                cacert = re.sub(
+                    r'\\n',
+                    r'\n',
+                    cacert,
+                )
+            except binascii.Error as e:
+                self.log.debug("Caught binascii.Error: {}".format(e))
+                raise n2vc.exceptions.InvalidCACertificate("Invalid CA Certificate")
+
+            return cacert
+
+        self.ca_cert = base64_to_cacert(ca_cert)
+        # self.ca_cert = None
+
 
         # Quiet websocket traffic
         logging.getLogger('websockets.protocol').setLevel(logging.INFO)
@@ -950,16 +976,8 @@ class N2VC:
 
         models = await self.controller.list_models()
         if ns_uuid not in models:
-            try:
-                self.models[ns_uuid] = await self.controller.add_model(
-                    ns_uuid
-                )
-            except JujuError as e:
-                if "already exists" not in e.message:
-                    raise e
-
-            # Create an observer for this model
-            await self.create_model_monitor(ns_uuid)
+            # Get the new model
+            await self.get_model(ns_uuid)
 
         return True
 
@@ -1270,7 +1288,9 @@ class N2VC:
             if model_name not in models:
                 try:
                     self.models[model_name] = await self.controller.add_model(
-                        model_name
+                        model_name,
+                        config={'authorized-keys': self.juju_public_key}
+
                     )
                 except JujuError as e:
                     if "already exists" not in e.message:
@@ -1312,20 +1332,24 @@ class N2VC:
 
         if self.secret:
             self.log.debug(
-                "Connecting to controller... ws://{}:{} as {}/{}".format(
+                "Connecting to controller... ws://{} as {}/{}".format(
                     self.endpoint,
-                    self.port,
                     self.user,
                     self.secret,
                 )
             )
-            await self.controller.connect(
-                endpoint=self.endpoint,
-                username=self.user,
-                password=self.secret,
-                cacert=self.ca_cert,
-            )
-            self.refcount['controller'] += 1
+            try:
+                await self.controller.connect(
+                    endpoint=self.endpoint,
+                    username=self.user,
+                    password=self.secret,
+                    cacert=self.ca_cert,
+                )
+                self.refcount['controller'] += 1
+                self.authenticated = True
+                self.log.debug("JujuApi: Logged into controller")
+            except Exception as ex:
+                self.log.debug("Caught exception: {}".format(ex))
         else:
             # current_controller no longer exists
             # self.log.debug("Connecting to current controller...")
@@ -1336,9 +1360,8 @@ class N2VC:
             #     cacert=cacert,
             # )
             self.log.fatal("VCA credentials not configured.")
+            self.authenticated = False
 
-        self.authenticated = True
-        self.log.debug("JujuApi: Logged into controller")
 
     async def logout(self):
         """Logout of the Juju controller."""

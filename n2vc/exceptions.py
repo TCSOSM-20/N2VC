@@ -38,3 +38,6 @@ class NoRouteToHost(Exception):
 
 class AuthenticationFailed(Exception):
     """The authentication for the specified user failed."""
+
+class InvalidCACertificate(Exception):
+    """The CA Certificate is not valid."""
