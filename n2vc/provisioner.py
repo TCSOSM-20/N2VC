@@ -73,6 +73,7 @@ fi
 
 IPTABLES_SCRIPT = """#!/bin/bash
 set -e
+apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -yqq iptables-persistent
 iptables -t nat -A OUTPUT -p tcp -d {} -j DNAT --to-destination {}
 netfilter-persistent save
@@ -396,6 +397,7 @@ class SSHProvisioner:
         retry = 10
         attempts = 0
         delay = 15
+
         while attempts <= retry:
             try:
                 attempts += 1
