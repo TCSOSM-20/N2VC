@@ -266,8 +266,9 @@ class N2VC:
 
             return cacert
 
-        self.ca_cert = base64_to_cacert(ca_cert)
-        # self.ca_cert = None
+        self.ca_cert = None
+        if ca_cert:
+            self.ca_cert = base64_to_cacert(ca_cert)
 
 
         # Quiet websocket traffic
