@@ -73,6 +73,7 @@ fi
 
 IPTABLES_SCRIPT = """#!/bin/bash
 set -e
+DEBIAN_FRONTEND=noninteractive apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -yqq iptables-persistent
 iptables -t nat -A OUTPUT -p tcp -d {} -j DNAT --to-destination {}
 netfilter-persistent save
@@ -317,20 +318,30 @@ class SSHProvisioner:
 
         if self._init_ubuntu_user():
             try:
+                step = "get ssh client"
                 ssh = self._get_ssh_client()
 
+                step = "detect hardware and os"
                 hw = self._detect_hardware_and_os(ssh)
+
+                step = "series"
                 params.series = hw['series']
+
+                step = "instance_id"
                 params.instance_id = "manual:{}".format(self.host)
+
+                step = "nonce"
                 params.nonce = "manual:{}:{}".format(
                     self.host,
                     str(uuid.uuid4()),  # a nop for Juju w/manual machines
                 )
+                step = "hw characteristics"
                 params.hardware_characteristics = {
                     'arch': hw['arch'],
                     'mem': int(hw['mem']),
                     'cpu-cores': int(hw['cpu-cores']),
                 }
+                step = "addresses"
                 params.addresses = [{
                     'value': self.host,
                     'type': 'ipv4',
@@ -338,6 +349,9 @@ class SSHProvisioner:
                 }]
 
             except paramiko.ssh_exception.AuthenticationException as e:
+                raise e
+            except Exception as e:
+                self.log.debug("Caught exception inside provision_machine step {}: {}".format(step, e))
                 raise e
             finally:
                 ssh.close()
