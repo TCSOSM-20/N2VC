@@ -25,7 +25,6 @@ import subprocess
 import os
 import shutil
 import asyncio
-import uuid
 import time
 import yaml
 from uuid import uuid4
@@ -100,7 +99,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('Initializing K8S environment. namespace: {}'.format(namespace))
 
         # create config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
         f = open(config_filename, "w")
         f.write(k8s_creds)
         f.close()
@@ -156,7 +156,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('adding {} repository {}. URL: {}'.format(repo_type, name, url))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         # helm repo update
         command = '{} --kubeconfig={} --home={} repo update'.format(self._helm_command, config_filename, helm_dir)
@@ -182,7 +183,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('list repositories for cluster {}'.format(cluster_uuid))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         command = '{} --kubeconfig={} --home={} repo list --output yaml'.format(self._helm_command, config_filename, helm_dir)
 
@@ -208,7 +210,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('list repositories for cluster {}'.format(cluster_uuid))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         command = '{} --kubeconfig={} --home={} repo remove {}'\
             .format(self._helm_command, config_filename, helm_dir, name)
@@ -225,7 +228,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('Resetting K8s environment. cluster uuid: {}'.format(cluster_uuid))
 
         # get kube and helm directories
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=False)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=False)
 
         # uninstall releases if needed
         releases = await self.instances_list(cluster_uuid=cluster_uuid)
@@ -310,10 +314,12 @@ class K8sHelmConnector(K8sConnector):
         end = start + timeout
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         # params to str
-        params_str = K8sHelmConnector._params_to_set_option(params)
+        # params_str = K8sHelmConnector._params_to_set_option(params)
+        params_str, file_to_delete = self._params_to_file_option(cluster_uuid=cluster_uuid, params=params)
 
         timeout_str = ''
         if timeout:
@@ -382,6 +388,10 @@ class K8sHelmConnector(K8sConnector):
 
             output, rc = await self._local_async_exec(command=command, raise_exception_on_error=False)
 
+        # remove temporal values yaml file
+        if file_to_delete:
+            os.remove(file_to_delete)
+
         # write final status
         await self._store_status(
             cluster_uuid=cluster_uuid,
@@ -414,7 +424,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('list releases for cluster {}'.format(cluster_uuid))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         command = '{} --kubeconfig={} --home={} list --output yaml'\
             .format(self._helm_command, config_filename, helm_dir)
@@ -443,10 +454,12 @@ class K8sHelmConnector(K8sConnector):
         end = start + timeout
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         # params to str
-        params_str = K8sHelmConnector._params_to_set_option(params)
+        # params_str = K8sHelmConnector._params_to_set_option(params)
+        params_str, file_to_delete = self._params_to_file_option(cluster_uuid=cluster_uuid, params=params)
 
         timeout_str = ''
         if timeout:
@@ -459,7 +472,7 @@ class K8sHelmConnector(K8sConnector):
 
         # version
         version_str = ''
-        if ':' in kdu_model:
+        if kdu_model and ':' in kdu_model:
             parts = kdu_model.split(sep=':')
             if len(parts) == 2:
                 version_str = '--version {}'.format(parts[1])
@@ -499,6 +512,10 @@ class K8sHelmConnector(K8sConnector):
 
             output, rc = await self._local_async_exec(command=command, raise_exception_on_error=False)
 
+        # remove temporal values yaml file
+        if file_to_delete:
+            os.remove(file_to_delete)
+
         # write final status
         await self._store_status(
             cluster_uuid=cluster_uuid,
@@ -535,7 +552,8 @@ class K8sHelmConnector(K8sConnector):
                    .format(kdu_instance, revision, cluster_uuid))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         command = '{} rollback --kubeconfig={} --home={} {} {} --wait'\
             .format(self._helm_command, config_filename, helm_dir, kdu_instance, revision)
@@ -604,7 +622,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('uninstall kdu_instance {} from cluster {}'.format(kdu_instance, cluster_uuid))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         command = '{} --kubeconfig={} --home={} delete --purge {}'\
             .format(self._helm_command, config_filename, helm_dir, kdu_instance)
@@ -666,7 +685,8 @@ class K8sHelmConnector(K8sConnector):
         self.debug('status of kdu_instance {}'.format(kdu_instance))
 
         # config filename
-        kube_dir, helm_dir, config_filename = self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+        kube_dir, helm_dir, config_filename, cluster_dir = \
+            self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
         command = '{} --kubeconfig={} --home={} status {} --output yaml'\
             .format(self._helm_command, config_filename, helm_dir, kdu_instance)
@@ -697,7 +717,6 @@ class K8sHelmConnector(K8sConnector):
             pass
 
         return data
-
 
     async def get_instance_info(
             self,
@@ -733,8 +752,7 @@ class K8sHelmConnector(K8sConnector):
         def get_random_number():
             r = random.randrange(start=1, stop=99999999)
             s = str(r)
-            while len(s) < 10:
-                s = '0' + s
+            s = s.rjust(width=10, fillchar=' ')
             return s
 
         name = name + get_random_number()
@@ -856,6 +874,37 @@ class K8sHelmConnector(K8sConnector):
                 pass
         return None
 
+    # params for use in -f file
+    # returns values file option and filename (in order to delete it at the end)
+    def _params_to_file_option(self, cluster_uuid: str, params: dict) -> (str, str):
+        params_str = ''
+
+        if params and len(params) > 0:
+            kube_dir, helm_dir, config_filename, cluster_dir = \
+                self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
+
+            def get_random_number():
+                r = random.randrange(start=1, stop=99999999)
+                s = str(r)
+                while len(s) < 10:
+                    s = '0' + s
+                return s
+
+            params2 = dict()
+            for key in params:
+                value = params.get(key)
+                if '!!yaml' in str(value):
+                    value = yaml.load(value[7:])
+                params2[key] = value
+
+            values_file = get_random_number() + '.yaml'
+            with open(values_file, 'w') as stream:
+                yaml.dump(params2, stream, indent=4, default_flow_style=False)
+
+            return '-f {}'.format(values_file), values_file
+
+        return '', None
+
     # params for use in --set option
     @staticmethod
     def _params_to_set_option(params: dict) -> str:
@@ -898,13 +947,14 @@ class K8sHelmConnector(K8sConnector):
                     line_list.append(cell)
         return output_table
 
-    def _get_paths(self, cluster_name: str, create_if_not_exist: bool = False) -> (str, str, str):
+    def _get_paths(self, cluster_name: str, create_if_not_exist: bool = False) -> (str, str, str, str):
         """
         Returns kube and helm directories
 
         :param cluster_name:
         :param create_if_not_exist:
-        :return: kube, helm directories and config filename. Raises exception if not exist and cannot create
+        :return: kube, helm directories, config filename and cluster dir.
+                Raises exception if not exist and cannot create
         """
 
         base = self.fs.path
@@ -942,7 +992,7 @@ class K8sHelmConnector(K8sConnector):
             raise Exception(msg)
 
         config_filename = kube_dir + '/config'
-        return kube_dir, helm_dir, config_filename
+        return kube_dir, helm_dir, config_filename, cluster_dir
 
     @staticmethod
     def _remove_multiple_spaces(str):
@@ -972,7 +1022,7 @@ class K8sHelmConnector(K8sConnector):
             self,
             command: str,
             raise_exception_on_error: bool = False,
-            show_error_log: bool = False
+            show_error_log: bool = True
     ) -> (str, int):
 
         command = K8sHelmConnector._remove_multiple_spaces(command)
