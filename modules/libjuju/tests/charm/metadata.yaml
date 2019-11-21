@@ -1,5 +1,0 @@
-name: charm
-series: ["xenial"]
-summary: "test"
-description: "test"
-maintainers: ["test"]
