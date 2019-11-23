@@ -894,7 +894,7 @@ class K8sHelmConnector(K8sConnector):
             for key in params:
                 value = params.get(key)
                 if '!!yaml' in str(value):
-                    value = yaml.load(value[7:])
+                    value = yaml.load(value[7:], Loader=yaml.SafeLoader)
                 params2[key] = value
 
             values_file = get_random_number() + '.yaml'
