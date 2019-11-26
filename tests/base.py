@@ -108,7 +108,7 @@ def has_metrics(charm):
 def get_descriptor(descriptor):
     desc = None
     try:
-        tmp = yaml.load(descriptor)
+        tmp = yaml.safe_load(descriptor)
 
         # Remove the envelope
         root = list(tmp.keys())[0]
