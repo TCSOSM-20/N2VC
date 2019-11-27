@@ -40,14 +40,6 @@ class AuthenticationFailed(Exception):
     """The authentication for the specified user failed."""
 
 
-class InvalidCACertificate(Exception):
-    """The CA Certificate is not valid."""
-
-
-class NotImplemented(Exception):
-    """The method is not implemented."""
-
-
 class N2VCException(Exception):
     """
     N2VC exception base class
@@ -115,7 +107,6 @@ class N2VCExecutionException(N2VCException):
     def __str__(self):
         return '<{}> Error executing primitive {} failed: {}'.format(type(self), self.primitive_name, super().__str__())
 
-
 class N2VCInvalidCertificate(N2VCException):
     """
     Invalid certificate
@@ -126,4 +117,3 @@ class N2VCInvalidCertificate(N2VCException):
 
     def __str__(self):
         return '<{}> Invalid certificate: {}'.format(type(self), super().__str__())
-

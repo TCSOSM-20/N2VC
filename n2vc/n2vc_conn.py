@@ -106,6 +106,8 @@ class N2VCConnector(abc.ABC, Loggable):
         self.on_update_db = on_update_db
 
         # generate private/public key-pair
+        self.private_key_path = None
+        self.public_key_path = None
         self.get_public_key()
 
     @abc.abstractmethod
@@ -116,7 +118,7 @@ class N2VCConnector(abc.ABC, Loggable):
         """
 
     # TODO: review which public key
-    async def get_public_key(self) -> str:
+    def get_public_key(self) -> str:
         """Get the VCA ssh-public-key
 
         Returns the SSH public key from local mahine, to be injected into virtual machines to

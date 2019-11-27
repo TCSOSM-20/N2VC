@@ -39,6 +39,9 @@ from juju.model import Model
 from juju.application import Application
 from juju.action import Action
 from juju.machine import Machine
+from juju.client import client
+
+from n2vc.provisioner import SSHProvisioner
 
 
 class N2VCJujuConnector(N2VCConnector):
@@ -58,8 +61,7 @@ class N2VCJujuConnector(N2VCConnector):
         url: str = '127.0.0.1:17070',
         username: str = 'admin',
         vca_config: dict = None,
-        on_update_db=None,
-        api_proxy=None
+        on_update_db=None
     ):
         """Initialize juju N2VC connector
         """
@@ -148,8 +150,9 @@ class N2VCJujuConnector(N2VCConnector):
         if self.ca_cert:
             self.ca_cert = base64_to_cacert(vca_config['ca_cert'])
 
-        if api_proxy:
-            self.api_proxy = api_proxy
+        if 'api_proxy' in vca_config:
+            self.api_proxy = vca_config['api_proxy']
+            self.debug('api_proxy for native charms configured: {}'.format(self.api_proxy))
         else:
             self.warning('api_proxy is not configured. Support for native charms is disabled')
 
@@ -286,7 +289,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         # register machine on juju
         try:
-            machine = await self._juju_provision_machine(
+            machine_id = await self._juju_provision_machine(
                 model_name=model_name,
                 hostname=hostname,
                 username=username,
@@ -298,13 +301,14 @@ class N2VCJujuConnector(N2VCConnector):
         except Exception as e:
             self.error('Error registering machine: {}'.format(e))
             raise N2VCException(message='Error registering machine on juju: {}'.format(e))
-        self.info('Machine registered')
+
+        self.info('Machine registered: {}'.format(machine_id))
 
         # id for the execution environment
         ee_id = N2VCJujuConnector._build_ee_id(
             model_name=model_name,
             application_name=application_name,
-            machine_id=str(machine.entity_id)
+            machine_id=str(machine_id)
         )
 
         self.info('Execution environment registered. ee_id: {}'.format(ee_id))
@@ -808,9 +812,14 @@ class N2VCJujuConnector(N2VCConnector):
             db_dict: dict = None,
             progress_timeout: float = None,
             total_timeout: float = None
-    ) -> Machine:
+    ) -> str:
 
-        self.debug('provisioning machine. model: {}, hostname: {}'.format(model_name, hostname))
+        if not self.api_proxy:
+            msg = 'Cannot provision machine: api_proxy is not defined'
+            self.error(msg=msg)
+            raise N2VCException(message=msg)
+
+        self.debug('provisioning machine. model: {}, hostname: {}, username: {}'.format(model_name, hostname, username))
 
         if not self._authenticated:
             await self._juju_login()
@@ -819,30 +828,79 @@ class N2VCJujuConnector(N2VCConnector):
         model = await self._juju_get_model(model_name=model_name)
         observer = self.juju_observers[model_name]
 
-        spec = 'ssh:{}@{}:{}'.format(username, hostname, private_key_path)
-        self.debug('provisioning machine {}'.format(spec))
+        # TODO check if machine is already provisioned
+        machine_list = await model.get_machines()
+
+        provisioner = SSHProvisioner(
+            host=hostname,
+            user=username,
+            private_key_path=private_key_path,
+            log=self.log
+        )
+
+        params = None
         try:
-            machine = await model.add_machine(spec=spec)
-        except Exception as e:
-            import sys
-            import traceback
-            traceback.print_exc(file=sys.stdout)
-            print('-' * 60)
-            raise e
+            params = provisioner.provision_machine()
+        except Exception as ex:
+            msg = "Exception provisioning machine: {}".format(ex)
+            self.log.error(msg)
+            raise N2VCException(message=msg)
+
+        params.jobs = ['JobHostUnits']
+
+        connection = model.connection()
+
+        # Submit the request.
+        self.debug("Adding machine to model")
+        client_facade = client.ClientFacade.from_connection(connection)
+        results = await client_facade.AddMachines(params=[params])
+        error = results.machines[0].error
+        if error:
+            msg = "Error adding machine: {}}".format(error.message)
+            self.error(msg=msg)
+            raise ValueError(msg)
+
+        machine_id = results.machines[0].machine
+
+        # Need to run this after AddMachines has been called,
+        # as we need the machine_id
+        self.debug("Installing Juju agent into machine {}".format(machine_id))
+        asyncio.ensure_future(provisioner.install_agent(
+            connection=connection,
+            nonce=params.nonce,
+            machine_id=machine_id,
+            api=self.api_proxy,
+        ))
+
+        # wait for machine in model (now, machine is not yet in model, so we must wait for it)
+        machine = None
+        for i in range(10):
+            machine_list = await model.get_machines()
+            if machine_id in machine_list:
+                self.debug('Machine {} found in model!'.format(machine_id))
+                machine = model.machines.get(machine_id)
+                break
+            await asyncio.sleep(2)
+
+        if machine is None:
+            msg = 'Machine {} not found in model'.format(machine_id)
+            self.error(msg=msg)
+            raise Exception(msg)
 
         # register machine with observer
         observer.register_machine(machine=machine, db_dict=db_dict)
 
         # wait for machine creation
-        self.debug('waiting for provision completed... {}'.format(machine.entity_id))
+        self.debug('waiting for provision finishes... {}'.format(machine_id))
         await observer.wait_for_machine(
-            machine=machine,
+            machine_id=machine_id,
             progress_timeout=progress_timeout,
             total_timeout=total_timeout
         )
 
-        self.debug("Machine provisioned {}".format(machine.entity_id))
-        return machine
+        self.debug("Machine provisioned {}".format(machine_id))
+
+        return machine_id
 
     async def _juju_deploy_charm(
             self,
@@ -870,12 +928,14 @@ class N2VCJujuConnector(N2VCConnector):
             self.debug('deploying application {} to machine {}, model {}'
                        .format(application_name, machine_id, model_name))
             self.debug('charm: {}'.format(charm_path))
+            series = 'xenial'
+            # series = None
             application = await model.deploy(
                 entity_url=charm_path,
                 application_name=application_name,
                 channel='stable',
                 num_units=1,
-                series='xenial',
+                series=series,
                 to=machine_id
             )
 

@@ -126,7 +126,7 @@ class Loggable:
         # datetime
         dt = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
         dt = dt + time_str
-        dt = time_str       # logger already shows datetime
+        # dt = time_str       # logger already shows datetime
 
         # current thread
         if include_thread:

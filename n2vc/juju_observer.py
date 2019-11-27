@@ -52,7 +52,12 @@ class JujuModelObserver(ModelObserver):
         self.actions = dict()
 
     def register_machine(self, machine: Machine, db_dict: dict):
-        entity_id = machine.entity_id
+        try:
+            entity_id = machine.entity_id
+        except:
+            # no entity_id aatribute, try machine attribute
+            entity_id = machine.machine
+        self.n2vc.debug(msg='Registering machine for changes notifications: {}'.format(entity_id))
         entity = _Entity(entity_id=entity_id, entity_type='machine', obj=machine, db_dict=db_dict)
         self.machines[entity_id] = entity
 
@@ -65,6 +70,7 @@ class JujuModelObserver(ModelObserver):
 
     def register_application(self, application: Application, db_dict: dict):
         entity_id = application.entity_id
+        self.n2vc.debug(msg='Registering application for changes notifications: {}'.format(entity_id))
         entity = _Entity(entity_id=entity_id, entity_type='application', obj=application, db_dict=db_dict)
         self.applications[entity_id] = entity
 
@@ -77,6 +83,7 @@ class JujuModelObserver(ModelObserver):
 
     def register_action(self, action: Action, db_dict: dict):
         entity_id = action.entity_id
+        self.n2vc.debug(msg='Registering action for changes notifications: {}'.format(entity_id))
         entity = _Entity(entity_id=entity_id, entity_type='action', obj=action, db_dict=db_dict)
         self.actions[entity_id] = entity
 
