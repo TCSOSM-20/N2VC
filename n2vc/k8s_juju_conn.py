@@ -36,11 +36,15 @@ import yaml
 
 
 class K8sJujuConnector(K8sConnector):
+
     def __init__(
             self,
-            fs,
-            kubectl_command='/usr/bin/kubectl',
-            log=None
+            fs: object,
+            db: object,
+            kubectl_command: str = '/usr/bin/kubectl',
+            juju_command: str = '/usr/bin/juju',
+            log=None,
+            on_update_db=None,
     ):
         """
 
@@ -53,25 +57,29 @@ class K8sJujuConnector(K8sConnector):
         # parent class
         K8sConnector.__init__(
             self,
-            kubectl_command=kubectl_command,
-            fs=fs,
+            db,
             log=log,
+            on_update_db=on_update_db,
         )
 
+        self.fs = fs
         self.info('Initializing K8S Juju connector')
 
         self.authenticated = False
         self.models = {}
         self.log = logging.getLogger(__name__)
+
+        self.juju_secret = ""
+
         self.info('K8S Juju connector initialized')
 
     """Initialization"""
     async def init_env(
         self,
-        k8s_creds: dict,
+        k8s_creds: str,
         namespace: str = 'kube-system',
         reuse_cluster_uuid: str = None,
-    ) -> str:
+    ) -> (str, bool):
         """Initialize a Kubernetes environment
 
         :param k8s_creds dict: A dictionary containing the Kubernetes cluster
@@ -87,7 +95,7 @@ class K8sJujuConnector(K8sConnector):
         use the CLI tools.
         """
         # TODO: The path may change
-        jujudir = "/snap/bin"
+        jujudir = "/usr/local/bin"
 
         self.k8scli = "{}/juju".format(jujudir)
 
@@ -120,6 +128,9 @@ class K8sJujuConnector(K8sConnector):
 
             # Add k8s cloud to Juju (unless it's microk8s)
 
+            # Convert to a dict
+            # k8s_creds = yaml.safe_load(k8s_creds)
+
             # Does the kubeconfig contain microk8s?
             microk8s = self.is_microk8s_by_credentials(k8s_creds)
 
@@ -127,10 +138,13 @@ class K8sJujuConnector(K8sConnector):
                 # Name the new k8s cloud
                 k8s_cloud = "{}-k8s".format(namespace)
 
+                print("Adding k8s cloud {}".format(k8s_cloud))
                 await self.add_k8s(k8s_cloud, k8s_creds)
 
                 # Bootstrap Juju controller
-                self.bootstrap(k8s_cloud, cluster_uuid)
+                print("Bootstrapping...")
+                await self.bootstrap(k8s_cloud, cluster_uuid)
+                print("Bootstrap done.")
             else:
                 # k8s_cloud = 'microk8s-test'
                 k8s_cloud = "{}-k8s".format(namespace)
@@ -143,6 +157,7 @@ class K8sJujuConnector(K8sConnector):
 
             # Parse ~/.local/share/juju/controllers.yaml
             # controllers.testing.api-endpoints|ca-cert|uuid
+            print("Getting controller endpoints")
             with open(os.path.expanduser(
                 "~/.local/share/juju/controllers.yaml"
             )) as f:
@@ -154,6 +169,7 @@ class K8sJujuConnector(K8sConnector):
 
             # Parse ~/.local/share/juju/accounts
             # controllers.testing.user|password
+            print("Getting accounts")
             with open(os.path.expanduser(
                 "~/.local/share/juju/accounts.yaml"
             )) as f:
@@ -183,6 +199,7 @@ class K8sJujuConnector(K8sConnector):
 
             # Store the cluster configuration so it
             # can be used for subsequent calls
+            print("Setting config")
             await self.set_config(cluster_uuid, config)
 
         else:
@@ -199,17 +216,20 @@ class K8sJujuConnector(K8sConnector):
 
         # Login to the k8s cluster
         if not self.authenticated:
-            await self.login()
+            await self.login(cluster_uuid)
 
         # We're creating a new cluster
-        print("Getting model {}".format(self.get_namespace(cluster_uuid)))
-        model = await self.get_model(self.get_namespace(cluster_uuid))
+        print("Getting model {}".format(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid))
+        model = await self.get_model(
+            self.get_namespace(cluster_uuid), 
+            cluster_uuid=cluster_uuid
+        )
 
         # Disconnect from the model
         if model and model.is_connected():
             await model.disconnect()
 
-        return cluster_uuid
+        return cluster_uuid, True
 
     """Repo Management"""
     async def repo_add(
@@ -231,8 +251,10 @@ class K8sJujuConnector(K8sConnector):
 
     """Reset"""
     async def reset(
-        self,
-        cluster_uuid: str,
+            self,
+            cluster_uuid: str,
+            force: bool = False,
+            uninstall_sw: bool = False
     ) -> bool:
         """Reset a cluster
 
@@ -244,7 +266,7 @@ class K8sJujuConnector(K8sConnector):
 
         try:
             if not self.authenticated:
-                await self.login()
+                await self.login(cluster_uuid)
 
             if self.controller.is_connected():
                 # Destroy the model
@@ -280,14 +302,16 @@ class K8sJujuConnector(K8sConnector):
             print("Caught exception during reset: {}".format(ex))
 
     """Deployment"""
+
     async def install(
         self,
         cluster_uuid: str,
         kdu_model: str,
         atomic: bool = True,
-        timeout: int = None,
+        timeout: float = 300,
         params: dict = None,
-    ) -> str:
+        db_dict: dict = None
+    ) -> bool:
         """Install a bundle
 
         :param cluster_uuid str: The UUID of the cluster to install to
@@ -303,22 +327,51 @@ class K8sJujuConnector(K8sConnector):
 
         if not self.authenticated:
             print("[install] Logging in to the controller")
-            await self.login()
+            await self.login(cluster_uuid)
 
         ##
         # Get or create the model, based on the namespace the cluster was
         # instantiated with.
         namespace = self.get_namespace(cluster_uuid)
-        model = await self.get_model(namespace)
+        namespace = "gitlab-demo"
+        self.log.debug("Checking for model named {}".format(namespace))
+        model = await self.get_model(namespace, cluster_uuid=cluster_uuid)
         if not model:
             # Create the new model
-            model = await self.add_model(namespace)
+            self.log.debug("Adding model: {}".format(namespace))
+            model = await self.add_model(namespace, cluster_uuid=cluster_uuid)
 
         if model:
             # TODO: Instantiation parameters
 
-            print("[install] deploying {}".format(kdu_model))
-            await model.deploy(kdu_model)
+            """
+            "Juju bundle that models the KDU, in any of the following ways:
+                - <juju-repo>/<juju-bundle>
+                - <juju-bundle folder under k8s_models folder in the package>
+                - <juju-bundle tgz file (w/ or w/o extension) under k8s_models folder in the package>
+                - <URL_where_to_fetch_juju_bundle>
+            """
+
+            bundle = kdu_model
+            if kdu_model.startswith("cs:"):
+                bundle = kdu_model
+            elif kdu_model.startswith("http"):
+                # Download the file
+                pass
+            else:
+                # Local file
+
+                # if kdu_model.endswith(".tar.gz") or kdu_model.endswith(".tgz")
+                # Uncompress temporarily
+                # bundle = <uncompressed file>
+                pass
+
+            if not bundle:
+                # Raise named exception that the bundle could not be found
+                raise Exception()
+
+            print("[install] deploying {}".format(bundle))
+            await model.deploy(bundle)
 
             # Get the application
             if atomic:
@@ -400,10 +453,10 @@ class K8sJujuConnector(K8sConnector):
         initial release.
         """
         namespace = self.get_namespace(cluster_uuid)
-        model = await self.get_model(namespace)
+        model = await self.get_model(namespace, cluster_uuid=cluster_uuid)
 
         with open(kdu_model, 'r') as f:
-            bundle = yaml.load(f, Loader=yaml.FullLoader)
+            bundle = yaml.safe_load(f)
 
             """
             {
@@ -478,7 +531,7 @@ class K8sJujuConnector(K8sConnector):
         removed = False
 
         # Remove an application from the model
-        model = await self.get_model(self.get_namespace(cluster_uuid))
+        model = await self.get_model(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid)
 
         if model:
             # Get the application
@@ -514,7 +567,7 @@ class K8sJujuConnector(K8sConnector):
 
         kdu = {}
         with open(kdu_model, 'r') as f:
-            bundle = yaml.load(f, Loader=yaml.FullLoader)
+            bundle = yaml.safe_load(f)
 
             """
             {
@@ -580,7 +633,7 @@ class K8sJujuConnector(K8sConnector):
         """
         status = {}
 
-        model = await self.get_model(self.get_namespace(cluster_uuid))
+        model = await self.get_model(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid)
 
         # model = await self.get_model_by_uuid(cluster_uuid)
         if model:
@@ -602,7 +655,7 @@ class K8sJujuConnector(K8sConnector):
     async def add_k8s(
         self,
         cloud_name: str,
-        credentials: dict,
+        credentials: str,
     ) -> bool:
         """Add a k8s cloud to Juju
 
@@ -621,10 +674,12 @@ class K8sJujuConnector(K8sConnector):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            input=yaml.dump(credentials, Dumper=yaml.Dumper),
-            encoding='ascii'
+            # input=yaml.dump(credentials, Dumper=yaml.Dumper).encode("utf-8"),
+            input=credentials.encode("utf-8"),
+            # encoding='ascii'
         )
         retcode = p.returncode
+        print("add-k8s return code: {}".format(retcode))
 
         if retcode > 0:
             raise Exception(p.stderr)
@@ -632,7 +687,8 @@ class K8sJujuConnector(K8sConnector):
 
     async def add_model(
         self,
-        model_name: str
+        model_name: str,
+        cluster_uuid: str,
     ) -> juju.model.Model:
         """Adds a model to the controller
 
@@ -643,8 +699,9 @@ class K8sJujuConnector(K8sConnector):
                   raises an exception.
         """
         if not self.authenticated:
-            await self.login()
+            await self.login(cluster_uuid)
 
+        self.log.debug("Adding model '{}' to cluster_uuid '{}'".format(model_name, cluster_uuid))
         model = await self.controller.add_model(
             model_name,
             config={'authorized-keys': self.juju_public_key}
@@ -673,13 +730,13 @@ class K8sJujuConnector(K8sConnector):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='ascii'
+            # encoding='ascii'
         )
         retcode = p.returncode
 
         if retcode > 0:
             #
-            if 'already exists' not in p.stderr:
+            if b'already exists' not in p.stderr:
                 raise Exception(p.stderr)
 
         return True
@@ -708,7 +765,7 @@ class K8sJujuConnector(K8sConnector):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='ascii'
+            # encoding='ascii'
         )
         retcode = p.returncode
 
@@ -731,7 +788,7 @@ class K8sJujuConnector(K8sConnector):
         cluster_config = "{}/{}.yaml".format(self.fs.path, cluster_uuid)
         if os.path.exists(cluster_config):
             with open(cluster_config, 'r') as f:
-                config = yaml.load(f.read(), Loader=yaml.FullLoader)
+                config = yaml.safe_load(f.read())
                 return config
         else:
             raise Exception(
@@ -743,6 +800,7 @@ class K8sJujuConnector(K8sConnector):
     async def get_model(
         self,
         model_name: str,
+        cluster_uuid: str,
     ) -> juju.model.Model:
         """Get a model from the Juju Controller.
 
@@ -753,12 +811,13 @@ class K8sJujuConnector(K8sConnector):
         :return The juju.model.Model object if found, or None.
         """
         if not self.authenticated:
-            await self.login()
+            await self.login(cluster_uuid)
 
         model = None
         models = await self.controller.list_models()
-
+        self.log.debug(models)
         if model_name in models:
+            self.log.debug("Found model: {}".format(model_name))
             model = await self.controller.get_model(
                 model_name
             )
@@ -818,7 +877,7 @@ class K8sJujuConnector(K8sConnector):
 
     def is_microk8s_by_credentials(
         self,
-        credentials: dict,
+        credentials: str,
     ) -> bool:
         """Check if a cluster is micro8s
 
@@ -827,19 +886,30 @@ class K8sJujuConnector(K8sConnector):
         :param credentials dict: A dictionary containing the k8s credentials
         :returns: A boolean if the cluster is running microk8s
         """
-        for context in credentials['contexts']:
-            if 'microk8s' in context['name']:
-                return True
+        creds = yaml.safe_load(credentials)
+        if creds:
+            for context in creds['contexts']:
+                if 'microk8s' in context['name']:
+                    return True
 
         return False
 
-    async def login(self):
+    async def login(self, cluster_uuid):
         """Login to the Juju controller."""
 
         if self.authenticated:
             return
 
         self.connecting = True
+
+        # Test: Make sure we have the credentials loaded
+        config = self.get_config(cluster_uuid)
+
+        self.juju_endpoint = config['endpoint']
+        self.juju_user = config['username']
+        self.juju_secret = config['secret']
+        self.juju_ca_cert = config['cacert']
+        self.juju_public_key = None
 
         self.controller = Controller()
 
@@ -906,7 +976,7 @@ class K8sJujuConnector(K8sConnector):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='ascii'
+            # encoding='ascii'
         )
         retcode = p.returncode
 
@@ -919,7 +989,7 @@ class K8sJujuConnector(K8sConnector):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            encoding='ascii'
+            # encoding='ascii'
         )
         retcode = p.returncode
 

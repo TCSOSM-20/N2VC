@@ -79,7 +79,7 @@ async def main():
     kdu_model = "./tests/bundles/k8s-zookeeper.yaml"
 
     """init_env"""
-    cluster_uuid = await client.init_env(k8screds, namespace, reuse_cluster_uuid=reuse_cluster_uuid)
+    cluster_uuid, _ = await client.init_env(k8screds, namespace, reuse_cluster_uuid=reuse_cluster_uuid)
     print(cluster_uuid)
 
     if not reuse_cluster_uuid:
