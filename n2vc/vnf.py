@@ -475,6 +475,7 @@ class N2VC:
             self.notify_callback(
                 model_name,
                 application_name,
+                "error",
                 "failed",
                 callback,
                 *callback_args,
