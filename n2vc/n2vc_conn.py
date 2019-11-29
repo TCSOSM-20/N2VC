@@ -64,7 +64,7 @@ class N2VCConnector(abc.ABC, Loggable):
             url: str,
             username: str,
             vca_config: dict,
-            on_update_db = None
+            on_update_db=None
     ):
         """Initialize N2VC abstract connector. It defines de API for VCA connectors
 
@@ -440,6 +440,8 @@ def juju_status_2_osm_status(type: str, status: str) -> N2VCDeploymentStatus:
     if type == 'application' or type == 'unit':
         if status in ['waiting', 'maintenance']:
             return N2VCDeploymentStatus.RUNNING
+        if status in ['error']:
+                return N2VCDeploymentStatus.FAILED
         elif status in ['active']:
             return N2VCDeploymentStatus.COMPLETED
         elif status in ['blocked']:

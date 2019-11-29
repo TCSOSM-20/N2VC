@@ -1021,9 +1021,6 @@ class N2VCJujuConnector(N2VCConnector):
             total_timeout: float = None
     ):
 
-        # get juju model
-        model = await self._juju_get_model(model_name=model_name)
-
         # get the application
         application = await self._juju_get_application(model_name=model_name, application_name=application_name)
 
@@ -1042,10 +1039,11 @@ class N2VCJujuConnector(N2VCConnector):
                 )
 
         # check if 'verify-ssh-credentials' action exists
-        unit = application.units[0]
+        # unit = application.units[0]
         actions = await application.get_actions()
         if 'verify-ssh-credentials' not in actions:
             msg = 'Action verify-ssh-credentials does not exist in application {}'.format(application_name)
+            self.debug(msg=msg)
             return False
 
         # execute verify-credentials

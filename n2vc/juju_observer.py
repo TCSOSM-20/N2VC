@@ -54,7 +54,7 @@ class JujuModelObserver(ModelObserver):
     def register_machine(self, machine: Machine, db_dict: dict):
         try:
             entity_id = machine.entity_id
-        except:
+        except Exception as e:
             # no entity_id aatribute, try machine attribute
             entity_id = machine.machine
         self.n2vc.debug(msg='Registering machine for changes notifications: {}'.format(entity_id))
