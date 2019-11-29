@@ -83,6 +83,16 @@ class K8sHelmConnector(K8sConnector):
         self._helm_command = helm_command
         self._check_file_exists(filename=helm_command, exception_if_not_exists=True)
 
+        # initialize helm client-only
+        self.debug('Initializing helm client-only...')
+        command = '{} init --client-only'.format(self._helm_command)
+        try:
+            asyncio.ensure_future(self._local_async_exec(command=command, raise_exception_on_error=False))
+            # loop = asyncio.get_event_loop()
+            # loop.run_until_complete(self._local_async_exec(command=command, raise_exception_on_error=False))
+        except Exception as e:
+            self.warning(msg='helm init failed (it was already initialized): {}'.format(e))
+
         self.info('K8S Helm connector initialized')
 
     async def init_env(
@@ -186,7 +196,8 @@ class K8sHelmConnector(K8sConnector):
         kube_dir, helm_dir, config_filename, cluster_dir = \
             self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
 
-        command = '{} --kubeconfig={} --home={} repo list --output yaml'.format(self._helm_command, config_filename, helm_dir)
+        command = '{} --kubeconfig={} --home={} repo list --output yaml'\
+            .format(self._helm_command, config_filename, helm_dir)
 
         output, rc = await self._local_async_exec(command=command, raise_exception_on_error=True)
         if output and len(output) > 0:
@@ -310,9 +321,6 @@ class K8sHelmConnector(K8sConnector):
 
         self.debug('installing {} in cluster {}'.format(kdu_model, cluster_uuid))
 
-        start = time.time()
-        end = start + timeout
-
         # config filename
         kube_dir, helm_dir, config_filename, cluster_dir = \
             self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
@@ -351,7 +359,7 @@ class K8sHelmConnector(K8sConnector):
                 if result is not None:
                     # instance already exists: generate a new one
                     kdu_instance = None
-            except:
+            except Exception as e:
                 kdu_instance = None
 
         # helm repo install
@@ -450,9 +458,6 @@ class K8sHelmConnector(K8sConnector):
 
         self.debug('upgrading {} in cluster {}'.format(kdu_model, cluster_uuid))
 
-        start = time.time()
-        end = start + timeout
-
         # config filename
         kube_dir, helm_dir, config_filename, cluster_dir = \
             self._get_paths(cluster_name=cluster_uuid, create_if_not_exist=True)
@@ -502,7 +507,7 @@ class K8sHelmConnector(K8sConnector):
             )
 
             # wait for execution task
-            await asyncio.wait([ exec_task ])
+            await asyncio.wait([exec_task])
 
             # cancel status task
             status_task.cancel()
@@ -634,40 +639,47 @@ class K8sHelmConnector(K8sConnector):
 
     async def inspect_kdu(
             self,
-            kdu_model: str
+            kdu_model: str,
+            repo_url: str = None
     ) -> str:
 
-        self.debug('inspect kdu_model {}'.format(kdu_model))
+        self.debug('inspect kdu_model {} from (optional) repo: {}'.format(kdu_model, repo_url))
 
-        command = '{} inspect values {}'\
-            .format(self._helm_command, kdu_model)
+        return await self._exec_inspect_comand(inspect_command='', kdu_model=kdu_model, repo_url=repo_url)
 
-        output, rc = await self._local_async_exec(command=command)
+    async def values_kdu(
+            self,
+            kdu_model: str,
+            repo_url: str = None
+    ) -> str:
 
-        return output
+        self.debug('inspect kdu_model values {} from (optional) repo: {}'.format(kdu_model, repo_url))
+
+        return await self._exec_inspect_comand(inspect_command='values', kdu_model=kdu_model, repo_url=repo_url)
 
     async def help_kdu(
             self,
-            kdu_model: str
-    ):
+            kdu_model: str,
+            repo_url: str = None
+    ) -> str:
 
-        self.debug('help kdu_model {}'.format(kdu_model))
+        self.debug('inspect kdu_model {} readme.md from repo: {}'.format(kdu_model, repo_url))
 
-        command = '{} inspect readme {}'\
-            .format(self._helm_command, kdu_model)
-
-        output, rc = await self._local_async_exec(command=command, raise_exception_on_error=True)
-
-        return output
+        return await self._exec_inspect_comand(inspect_command='readme', kdu_model=kdu_model, repo_url=repo_url)
 
     async def status_kdu(
             self,
             cluster_uuid: str,
             kdu_instance: str
-    ):
+    ) -> str:
 
-        return await self._status_kdu(cluster_uuid=cluster_uuid, kdu_instance=kdu_instance, show_error_log=True)
-
+        # call internal function
+        return await self._status_kdu(
+            cluster_uuid=cluster_uuid,
+            kdu_instance=kdu_instance,
+            show_error_log=True,
+            return_text=True
+        )
 
     """
     ##################################################################################################
@@ -675,11 +687,32 @@ class K8sHelmConnector(K8sConnector):
     ##################################################################################################
     """
 
+    async def _exec_inspect_comand(
+            self,
+            inspect_command: str,
+            kdu_model: str,
+            repo_url: str = None
+    ):
+
+        repo_str = ''
+        if repo_url:
+            repo_str = ' --repo {}'.format(repo_url)
+            idx = kdu_model.find('/')
+            if idx >= 0:
+                idx += 1
+                kdu_model = kdu_model[idx:]
+
+        inspect_command = '{} inspect {} {}{}'.format(self._helm_command, inspect_command, kdu_model, repo_str)
+        output, rc = await self._local_async_exec(command=inspect_command, encode_utf8=True)
+
+        return output
+
     async def _status_kdu(
             self,
             cluster_uuid: str,
             kdu_instance: str,
-            show_error_log: bool = False
+            show_error_log: bool = False,
+            return_text: bool = False
     ):
 
         self.debug('status of kdu_instance {}'.format(kdu_instance))
@@ -696,6 +729,9 @@ class K8sHelmConnector(K8sConnector):
             raise_exception_on_error=True,
             show_error_log=show_error_log
         )
+
+        if return_text:
+            return str(output)
 
         if rc != 0:
             return None
@@ -800,7 +836,7 @@ class K8sHelmConnector(K8sConnector):
             kdu_instance: str
     ) -> bool:
 
-        status = await self.status_kdu(cluster_uuid=cluster_uuid, kdu_instance=kdu_instance)
+        status = await self._status_kdu(cluster_uuid=cluster_uuid, kdu_instance=kdu_instance, return_text=False)
 
         # extract info.status.resources-> str
         # format:
@@ -877,7 +913,6 @@ class K8sHelmConnector(K8sConnector):
     # params for use in -f file
     # returns values file option and filename (in order to delete it at the end)
     def _params_to_file_option(self, cluster_uuid: str, params: dict) -> (str, str):
-        params_str = ''
 
         if params and len(params) > 0:
             kube_dir, helm_dir, config_filename, cluster_dir = \
@@ -894,7 +929,7 @@ class K8sHelmConnector(K8sConnector):
             for key in params:
                 value = params.get(key)
                 if '!!yaml' in str(value):
-                    value = yaml.safe_load(value[7:])
+                    value = yaml.load(value[7:])
                 params2[key] = value
 
             values_file = get_random_number() + '.yaml'
@@ -1022,7 +1057,8 @@ class K8sHelmConnector(K8sConnector):
             self,
             command: str,
             raise_exception_on_error: bool = False,
-            show_error_log: bool = True
+            show_error_log: bool = True,
+            encode_utf8: bool = False
     ) -> (str, int):
 
         command = K8sHelmConnector._remove_multiple_spaces(command)
@@ -1046,8 +1082,10 @@ class K8sHelmConnector(K8sConnector):
             output = ''
             if stdout:
                 output = stdout.decode('utf-8').strip()
+                # output = stdout.decode()
             if stderr:
                 output = stderr.decode('utf-8').strip()
+                # output = stderr.decode()
 
             if return_code != 0 and show_error_log:
                 self.debug('Return code (FAIL): {}\nOutput:\n{}'.format(return_code, output))
@@ -1056,6 +1094,10 @@ class K8sHelmConnector(K8sConnector):
 
             if raise_exception_on_error and return_code != 0:
                 raise Exception(output)
+
+            if encode_utf8:
+                output = output.encode('utf-8').strip()
+                output = str(output).replace('\\n', '\n')
 
             return output, return_code
 
@@ -1102,4 +1144,3 @@ class K8sHelmConnector(K8sConnector):
             if exception_if_not_exists:
                 self.error(msg)
                 raise Exception(msg)
-

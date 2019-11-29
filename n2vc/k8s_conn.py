@@ -63,7 +63,7 @@ class K8sConnector(abc.ABC, Loggable):
             self,
             k8s_creds: str,
             namespace: str = 'kube-system',
-            reuse_cluster_uuid = None
+            reuse_cluster_uuid=None
     ) -> (str, bool):
         """
         It prepares a given K8s cluster environment to run Charts or juju Bundles on both sides:
@@ -237,30 +237,33 @@ class K8sConnector(abc.ABC, Loggable):
     @abc.abstractmethod
     async def inspect_kdu(
             self,
-            kdu_model: str
+            kdu_model: str,
+            repo_url: str = None
     ) -> str:
         """
-        These calls will retrieve from the Charm/Bundle:
+        These calls will retrieve from the Chart/Bundle:
 
             - The list of configurable values and their defaults (e.g. in Charts, it would retrieve
                 the contents of `values.yaml`).
             - If available, any embedded help file (e.g. `readme.md`) embedded in the Chart/Bundle.
 
-        :param cluster_uuid: the cluster to get the information
         :param kdu_model: chart/bundle reference
-        :return: If successful, it will return a dictionary containing the list of available parameters
-            and their default values
+        :param repo_url: optional, reposotory URL (None if tar.gz, URl in other cases, even stable URL)
+        :return:
+
+        If successful, it will return the available parameters and their default values as provided by the backend.
         """
 
     @abc.abstractmethod
     async def help_kdu(
             self,
-            kdu_model: str
+            kdu_model: str,
+            repo_url: str = None
     ) -> str:
         """
 
-        :param cluster_uuid: the cluster to get the information
         :param kdu_model: chart/bundle reference
+        :param repo_url: optional, reposotory URL (None if tar.gz, URl in other cases, even stable URL)
         :return: If successful, it will return the contents of the 'readme.md'
         """
 
