@@ -69,6 +69,7 @@ class K8sJujuConnector(K8sConnector):
         self.models = {}
         self.log = logging.getLogger(__name__)
 
+        self.juju_command = juju_command
         self.juju_secret = ""
 
         self.info('K8S Juju connector initialized')
@@ -94,10 +95,6 @@ class K8sJujuConnector(K8sConnector):
         Bootstrapping cannot be done, by design, through the API. We need to
         use the CLI tools.
         """
-        # TODO: The path may change
-        jujudir = "/usr/local/bin"
-
-        self.k8scli = "{}/juju".format(jujudir)
 
         """
         WIP: Workflow
@@ -128,30 +125,19 @@ class K8sJujuConnector(K8sConnector):
 
             # Add k8s cloud to Juju (unless it's microk8s)
 
-            # Convert to a dict
-            # k8s_creds = yaml.safe_load(k8s_creds)
-
             # Does the kubeconfig contain microk8s?
             microk8s = self.is_microk8s_by_credentials(k8s_creds)
 
-            if not microk8s:
-                # Name the new k8s cloud
-                k8s_cloud = "{}-k8s".format(namespace)
+            # Name the new k8s cloud
+            k8s_cloud = "{}-k8s".format(namespace)
 
-                print("Adding k8s cloud {}".format(k8s_cloud))
-                await self.add_k8s(k8s_cloud, k8s_creds)
+            print("Adding k8s cloud {}".format(k8s_cloud))
+            await self.add_k8s(k8s_cloud, k8s_creds)
 
-                # Bootstrap Juju controller
-                print("Bootstrapping...")
-                await self.bootstrap(k8s_cloud, cluster_uuid)
-                print("Bootstrap done.")
-            else:
-                # k8s_cloud = 'microk8s-test'
-                k8s_cloud = "{}-k8s".format(namespace)
-
-                await self.add_k8s(k8s_cloud, k8s_creds)
-
-                await self.bootstrap(k8s_cloud, cluster_uuid)
+            # Bootstrap Juju controller
+            print("Bootstrapping...")
+            await self.bootstrap(k8s_cloud, cluster_uuid, microk8s)
+            print("Bootstrap done.")
 
             # Get the controller information
 
@@ -333,7 +319,7 @@ class K8sJujuConnector(K8sConnector):
         # Get or create the model, based on the namespace the cluster was
         # instantiated with.
         namespace = self.get_namespace(cluster_uuid)
-        namespace = "gitlab-demo"
+
         self.log.debug("Checking for model named {}".format(namespace))
         model = await self.get_model(namespace, cluster_uuid=cluster_uuid)
         if not model:
@@ -668,8 +654,9 @@ class K8sJujuConnector(K8sConnector):
 
         :returns: True if successful, otherwise raises an exception.
         """
-        cmd = [self.k8scli, "add-k8s", "--local", cloud_name]
 
+        cmd = [self.juju_command, "add-k8s", "--local", cloud_name]
+        print(cmd)
         p = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
@@ -711,7 +698,8 @@ class K8sJujuConnector(K8sConnector):
     async def bootstrap(
         self,
         cloud_name: str,
-        cluster_uuid: str
+        cluster_uuid: str,
+        microk8s: bool
     ) -> bool:
         """Bootstrap a Kubernetes controller
 
@@ -719,9 +707,18 @@ class K8sJujuConnector(K8sConnector):
 
         :param cloud_name str: The name of the cloud.
         :param cluster_uuid str: The UUID of the cluster to bootstrap.
+        :param microk8s bool: If this is a microk8s cluster.
         :returns: True upon success or raises an exception.
         """
-        cmd = [self.k8scli, "bootstrap", cloud_name, cluster_uuid]
+
+        if microk8s:
+            cmd = [self.juju_command, "bootstrap", cloud_name, cluster_uuid]
+        else:
+            """
+            For non-microk8s clusters, specify that the controller service is using a LoadBalancer.
+            """
+            cmd = [self.juju_command, "bootstrap", cloud_name, cluster_uuid, "--config", "controller-service-type=loadbalancer"]
+
         print("Bootstrapping controller {} in cloud {}".format(
             cluster_uuid, cloud_name
         ))
@@ -753,7 +750,7 @@ class K8sJujuConnector(K8sConnector):
         :returns: True upon success or raises an exception.
         """
         cmd = [
-            self.k8scli,
+            self.juju_command,
             "destroy-controller",
             "--destroy-all-models",
             "--destroy-storage",
@@ -971,7 +968,7 @@ class K8sJujuConnector(K8sConnector):
         """
 
         # Remove the bootstrapped controller
-        cmd = [self.k8scli, "remove-k8s", "--client", cloud_name]
+        cmd = [self.juju_command, "remove-k8s", "--client", cloud_name]
         p = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
@@ -984,7 +981,7 @@ class K8sJujuConnector(K8sConnector):
             raise Exception(p.stderr)
 
         # Remove the cloud from the local config
-        cmd = [self.k8scli, "remove-cloud", "--client", cloud_name]
+        cmd = [self.juju_command, "remove-cloud", "--client", cloud_name]
         p = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,

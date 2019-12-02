@@ -62,24 +62,27 @@ async def main():
     fs.fs_connect(storage)
 
     client = n2vc.k8s_juju_conn.K8sJujuConnector(
-        kubectl_command = '/bin/true',
-        fs = fs,
+        kubectl_command='/snap/bin/kubectl',
+        juju_command='/snap/bin/juju',
+        fs=fs,
+        db=None,
     )
 
     # kubectl config view --raw
     # microk8s.config
 
     # if microk8s then
-    kubecfg = subprocess.getoutput('microk8s.config')
+    # kubecfg = subprocess.getoutput('microk8s.config')
     # else
-    # kubecfg.subprocess.getoutput('kubectl config view --raw')
-    
-    k8screds = yaml.load(kubecfg, Loader=yaml.FullLoader)
+    kubecfg = subprocess.getoutput('kubectl config view --raw')
+    # print(kubecfg)
+
+    # k8screds = yaml.load(kubecfg, Loader=yaml.FullLoader)
     namespace = 'testing'
     kdu_model = "./tests/bundles/k8s-zookeeper.yaml"
 
     """init_env"""
-    cluster_uuid, _ = await client.init_env(k8screds, namespace, reuse_cluster_uuid=reuse_cluster_uuid)
+    cluster_uuid, _ = await client.init_env(kubecfg, namespace, reuse_cluster_uuid=reuse_cluster_uuid)
     print(cluster_uuid)
 
     if not reuse_cluster_uuid:
