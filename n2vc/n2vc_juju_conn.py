@@ -266,11 +266,11 @@ class N2VCJujuConnector(N2VCConnector):
 
         if credentials is None:
             raise N2VCBadArgumentsException(message='credentials are mandatory', bad_args=['credentials'])
-        if 'hostname' in credentials:
+        if credentials.get('hostname'):
             hostname = credentials['hostname']
         else:
             raise N2VCBadArgumentsException(message='hostname is mandatory', bad_args=['credentials.hostname'])
-        if 'username' in credentials:
+        if credentials.get('username'):
             username = credentials['username']
         else:
             raise N2VCBadArgumentsException(message='username is mandatory', bad_args=['credentials.username'])

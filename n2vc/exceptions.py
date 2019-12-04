@@ -12,6 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+
 class JujuCharmNotFound(Exception):
     """The Charm can't be found or is not readable."""
 
@@ -122,3 +123,19 @@ class N2VCInvalidCertificate(N2VCException):
 
     def __str__(self):
         return '<{}> Invalid certificate: {}'.format(type(self), super().__str__())
+
+
+class K8sException(Exception):
+    """
+    K8s exception
+    """
+
+    def __init__(self, message: str):
+        Exception.__init__(self, message)
+        self._message = message
+
+    def __str__(self):
+        return self._message
+
+    def __repr__(self):
+        return self._message
