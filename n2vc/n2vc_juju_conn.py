@@ -439,7 +439,7 @@ class N2VCJujuConnector(N2VCConnector):
             raise e
 
         # return public key if exists
-        return output
+        return output["pubkey"] if "pubkey" in output else output
 
     async def add_relation(
         self,
