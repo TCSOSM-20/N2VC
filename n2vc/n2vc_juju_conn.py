@@ -706,18 +706,22 @@ class N2VCJujuConnector(N2VCConnector):
         :return: app-vnf-<vnf id>-vdu-<vdu-id>-cnt-<vdu-count>
         """
 
+        # TODO: Enforce the Juju 50-character application limit
+
         # split namespace components
         _, _, vnf_id, vdu_id, vdu_count = self._get_namespace_components(namespace=namespace)
 
         if vnf_id is None or len(vnf_id) == 0:
             vnf_id = ''
         else:
-            vnf_id = 'vnf-' + vnf_id
+            # Shorten the vnf_id to its last twelve characters
+            vnf_id = 'vnf-' + vnf_id[-12:]
 
         if vdu_id is None or len(vdu_id) == 0:
             vdu_id = ''
         else:
-            vdu_id = '-vdu-' + vdu_id
+            # Shorten the vdu_id to its last twelve characters
+            vdu_id = '-vdu-' + vdu_id[-12:]
 
         if vdu_count is None or len(vdu_count) == 0:
             vdu_count = ''
