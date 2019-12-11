@@ -123,10 +123,11 @@ class K8sJujuConnector(K8sConnector):
 
             cluster_uuid = str(uuid.uuid4())
 
-            # Add k8s cloud to Juju (unless it's microk8s)
+            # Is a local k8s cluster?
+            localk8s = self.is_local_k8s(k8s_creds)
 
-            # Does the kubeconfig contain microk8s?
-            microk8s = self.is_microk8s_by_credentials(k8s_creds)
+            # If the k8s is external, the juju controller needs a loadbalancer
+            loadbalancer = False if localk8s else True
 
             # Name the new k8s cloud
             k8s_cloud = "{}-k8s".format(namespace)
@@ -136,7 +137,7 @@ class K8sJujuConnector(K8sConnector):
 
             # Bootstrap Juju controller
             print("Bootstrapping...")
-            await self.bootstrap(k8s_cloud, cluster_uuid, microk8s)
+            await self.bootstrap(k8s_cloud, cluster_uuid, loadbalancer)
             print("Bootstrap done.")
 
             # Get the controller information
@@ -180,7 +181,7 @@ class K8sJujuConnector(K8sConnector):
                 'secret': self.juju_secret,
                 'cacert': self.juju_ca_cert,
                 'namespace': namespace,
-                'microk8s': microk8s,
+                'loadbalancer': loadbalancer,
             }
 
             # Store the cluster configuration so it
@@ -207,7 +208,7 @@ class K8sJujuConnector(K8sConnector):
         # We're creating a new cluster
         print("Getting model {}".format(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid))
         model = await self.get_model(
-            self.get_namespace(cluster_uuid), 
+            self.get_namespace(cluster_uuid),
             cluster_uuid=cluster_uuid
         )
 
@@ -272,13 +273,6 @@ class K8sJujuConnector(K8sConnector):
                 print("[reset] Destroying controller")
                 await self.destroy_controller(cluster_uuid)
 
-                """Remove the k8s cloud
-
-                Only remove the k8s cloud if it's not a microk8s cloud,
-                since microk8s is a built-in cloud type.
-                """
-                # microk8s = self.is_microk8s_by_cluster_uuid(cluster_uuid)
-                # if not microk8s:
                 print("[reset] Removing k8s cloud")
                 namespace = self.get_namespace(cluster_uuid)
                 k8s_cloud = "{}-k8s".format(namespace)
@@ -699,7 +693,7 @@ class K8sJujuConnector(K8sConnector):
         self,
         cloud_name: str,
         cluster_uuid: str,
-        microk8s: bool
+        loadbalancer: bool
     ) -> bool:
         """Bootstrap a Kubernetes controller
 
@@ -707,15 +701,15 @@ class K8sJujuConnector(K8sConnector):
 
         :param cloud_name str: The name of the cloud.
         :param cluster_uuid str: The UUID of the cluster to bootstrap.
-        :param microk8s bool: If this is a microk8s cluster.
+        :param loadbalancer bool: If the controller should use loadbalancer or not.
         :returns: True upon success or raises an exception.
         """
 
-        if microk8s:
+        if not loadbalancer:
             cmd = [self.juju_command, "bootstrap", cloud_name, cluster_uuid]
         else:
             """
-            For non-microk8s clusters, specify that the controller service is using a LoadBalancer.
+            For public clusters, specify that the controller service is using a LoadBalancer.
             """
             cmd = [self.juju_command, "bootstrap", cloud_name, cluster_uuid, "--config", "controller-service-type=loadbalancer"]
 
@@ -858,36 +852,26 @@ class K8sJujuConnector(K8sConnector):
             return True
         return False
 
-    def is_microk8s_by_cluster_uuid(
-        self,
-        cluster_uuid: str,
-    ) -> bool:
-        """Check if a cluster is micro8s
-
-        Checks if a cluster is running microk8s
-
-        :param cluster_uuid str: The UUID of the cluster
-        :returns: A boolean if the cluster is running microk8s
-        """
-        config = self.get_config(cluster_uuid)
-        return config['microk8s']
-
-    def is_microk8s_by_credentials(
+    def is_local_k8s(
         self,
         credentials: str,
     ) -> bool:
-        """Check if a cluster is micro8s
+        """Check if a cluster is local
 
-        Checks if a cluster is running microk8s
+        Checks if a cluster is running in the local host
 
         :param credentials dict: A dictionary containing the k8s credentials
-        :returns: A boolean if the cluster is running microk8s
+        :returns: A boolean if the cluster is running locally
         """
         creds = yaml.safe_load(credentials)
-        if creds:
-            for context in creds['contexts']:
-                if 'microk8s' in context['name']:
-                    return True
+        if os.getenv("OSMLCM_VCA_APIPROXY"):
+            host_ip = os.getenv("OSMLCM_VCA_APIPROXY")
+
+        if creds and host_ip:
+            for cluster in creds['clusters']:
+                if 'server' in cluster['cluster']:
+                    if host_ip in cluster['cluster']['server']:
+                        return True
 
         return False
 
@@ -992,7 +976,6 @@ class K8sJujuConnector(K8sConnector):
 
         if retcode > 0:
             raise Exception(p.stderr)
-
 
         return True
 
