@@ -29,6 +29,7 @@ import binascii
 import re
 
 from n2vc.n2vc_conn import N2VCConnector
+from n2vc.n2vc_conn import obj_to_dict, obj_to_yaml
 from n2vc.exceptions \
     import N2VCBadArgumentsException, N2VCException, N2VCConnectionException, \
     N2VCExecutionException, N2VCInvalidCertificate
@@ -171,8 +172,9 @@ class N2VCJujuConnector(N2VCConnector):
 
         self.info('N2VC juju connector initialized')
 
-    async def get_status(self, namespace: str):
-        self.info('Getting NS status. namespace: {}'.format(namespace))
+    async def get_status(self, namespace: str, yaml_format: bool = True):
+
+        # self.info('Getting NS status. namespace: {}'.format(namespace))
 
         if not self._authenticated:
             await self._juju_login()
@@ -190,7 +192,10 @@ class N2VCJujuConnector(N2VCConnector):
 
         status = await model.get_status()
 
-        return status
+        if yaml_format:
+            return obj_to_yaml(status)
+        else:
+            return obj_to_dict(status)
 
     async def create_execution_environment(
         self,
@@ -508,7 +513,6 @@ class N2VCJujuConnector(N2VCConnector):
 
         nsi_id, ns_id, vnf_id, vdu_id, vdu_count = self._get_namespace_components(namespace=namespace)
         if ns_id is not None:
-            self.debug('Deleting model {}'.format(ns_id))
             try:
                 await self._juju_destroy_model(
                     model_name=ns_id,
@@ -653,7 +657,7 @@ class N2VCJujuConnector(N2VCConnector):
             if not the_path[-1] == '.':
                 the_path = the_path + '.'
             update_dict = {the_path + 'ee_id': ee_id}
-            self.debug('Writing ee_id to database: {}'.format(the_path))
+            # self.debug('Writing ee_id to database: {}'.format(the_path))
             self.db.set_one(
                 table=the_table,
                 q_filter=the_filter,
@@ -985,18 +989,16 @@ class N2VCJujuConnector(N2VCConnector):
 
         application = await self._juju_get_application(model_name=model_name, application_name=application_name)
 
-        self.debug('trying to execute action {}'.format(action_name))
         unit = application.units[0]
         if unit is not None:
             actions = await application.get_actions()
             if action_name in actions:
-                self.debug('executing action {} with params {}'.format(action_name, kwargs))
+                self.debug('executing action "{}" using params: {}'.format(action_name, kwargs))
                 action = await unit.run_action(action_name, **kwargs)
 
                 # register action with observer
                 observer.register_action(action=action, db_dict=db_dict)
 
-                self.debug('    waiting for action completed or error...')
                 await observer.wait_for_action(
                     action_id=action.entity_id,
                     progress_timeout=progress_timeout,
@@ -1220,23 +1222,26 @@ class N2VCJujuConnector(N2VCConnector):
         model = await self._juju_get_model(model_name=model_name)
         uuid = model.info.uuid
 
-        self.debug('disconnecting model {}...'.format(model_name))
         await self._juju_disconnect_model(model_name=model_name)
         self.juju_models[model_name] = None
         self.juju_observers[model_name] = None
 
         self.debug('destroying model {}...'.format(model_name))
         await self.controller.destroy_model(uuid)
+        self.debug('model destroy requested {}'.format(model_name))
 
         # wait for model is completely destroyed
         end = time.time() + total_timeout
         while time.time() < end:
-            self.debug('waiting for model is destroyed...')
+            self.debug('Waiting for model is destroyed...')
             try:
-                await self.controller.get_model(uuid)
-            except Exception:
-                self.debug('model destroyed')
-                return
+                # await self.controller.get_model(uuid)
+                models = await self.controller.list_models()
+                if model_name not in models:
+                    self.debug('The model {} ({}) was destroyed'.format(model_name, uuid))
+                    return
+            except Exception as e:
+                pass
             await asyncio.sleep(1.0)
 
     async def _juju_login(self):
@@ -1316,6 +1321,8 @@ class N2VCJujuConnector(N2VCConnector):
             await self.juju_models[model_name].disconnect()
             self.juju_models[model_name] = None
             self.juju_observers[model_name] = None
+        else:
+            self.warning('Cannot disconnect model: {}'.format(model_name))
 
     def _create_juju_public_key(self):
         """Recreate the Juju public key on lcm container, if needed

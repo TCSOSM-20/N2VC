@@ -31,6 +31,7 @@ from enum import Enum
 from http import HTTPStatus
 from n2vc.loggable import Loggable
 from n2vc.exceptions import N2VCBadArgumentsException
+import yaml
 
 from osm_common.dbmongo import DbException
 
@@ -111,10 +112,11 @@ class N2VCConnector(abc.ABC, Loggable):
         self.get_public_key()
 
     @abc.abstractmethod
-    async def get_status(self, namespace: str):
+    async def get_status(self, namespace: str, yaml_format: bool = True):
         """Get namespace status
 
         :param namespace: we obtain ns from namespace
+        :param yaml_format: returns a yaml string
         """
 
     # TODO: review which public key
@@ -132,7 +134,10 @@ class N2VCConnector(abc.ABC, Loggable):
         public_key = ''
 
         # Find the path where we expect our key lives (~/.ssh)
-        homedir = os.environ['HOME']
+        homedir = os.environ.get('HOME')
+        if not homedir:
+            self.warning('No HOME environment variable, using /tmp')
+            homedir = '/tmp'
         sshdir = "{}/.ssh".format(homedir)
         if not os.path.exists(sshdir):
             os.mkdir(sshdir)
@@ -397,8 +402,8 @@ class N2VCConnector(abc.ABC, Loggable):
             self.debug('No db_dict => No database write')
             return
 
-        self.debug('status={} / detailed-status={} / VCA-status={} / entity_type={}'
-                   .format(str(status.value), detailed_status, vca_status, entity_type))
+        # self.debug('status={} / detailed-status={} / VCA-status={} / entity_type={}'
+        #            .format(str(status.value), detailed_status, vca_status, entity_type))
 
         try:
 
@@ -464,3 +469,25 @@ def juju_status_2_osm_status(type: str, status: str) -> N2VCDeploymentStatus:
             return N2VCDeploymentStatus.UNKNOWN
 
     return N2VCDeploymentStatus.FAILED
+
+
+def obj_to_yaml(obj: object) -> str:
+    # dump to yaml
+    dump_text = yaml.dump(obj, default_flow_style=False, indent=2)
+    # split lines
+    lines = dump_text.splitlines()
+    # remove !!python/object tags
+    yaml_text = ''
+    for line in lines:
+        index = line.find('!!python/object')
+        if index >= 0:
+            line = line[:index]
+        yaml_text += line + '\n'
+    return yaml_text
+
+
+def obj_to_dict(obj: object) -> dict:
+    # convert obj to yaml
+    yaml_text = obj_to_yaml(obj)
+    # parse to dict
+    return yaml.load(yaml_text, Loader=yaml.Loader)
