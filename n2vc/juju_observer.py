@@ -57,7 +57,7 @@ class JujuModelObserver(ModelObserver):
         except Exception as e:
             # no entity_id aatribute, try machine attribute
             entity_id = machine.machine
-        self.n2vc.debug(msg='Registering machine for changes notifications: {}'.format(entity_id))
+        # self.n2vc.debug(msg='Registering machine for change notifications: {}'.format(entity_id))
         entity = _Entity(entity_id=entity_id, entity_type='machine', obj=machine, db_dict=db_dict)
         self.machines[entity_id] = entity
 
@@ -70,7 +70,7 @@ class JujuModelObserver(ModelObserver):
 
     def register_application(self, application: Application, db_dict: dict):
         entity_id = application.entity_id
-        self.n2vc.debug(msg='Registering application for changes notifications: {}'.format(entity_id))
+        # self.n2vc.debug(msg='Registering application for change notifications: {}'.format(entity_id))
         entity = _Entity(entity_id=entity_id, entity_type='application', obj=application, db_dict=db_dict)
         self.applications[entity_id] = entity
 
@@ -83,7 +83,7 @@ class JujuModelObserver(ModelObserver):
 
     def register_action(self, action: Action, db_dict: dict):
         entity_id = action.entity_id
-        self.n2vc.debug(msg='Registering action for changes notifications: {}'.format(entity_id))
+        # self.n2vc.debug(msg='Registering action for changes notifications: {}'.format(entity_id))
         entity = _Entity(entity_id=entity_id, entity_type='action', obj=action, db_dict=db_dict)
         self.actions[entity_id] = entity
 
@@ -103,6 +103,8 @@ class JujuModelObserver(ModelObserver):
         if not self.is_machine_registered(machine_id):
             return
 
+        self.n2vc.debug('Waiting for machine completed: {}'.format(machine_id))
+
         # wait for a final state
         entity = self.machines[machine_id]
         return await self._wait_for_entity(
@@ -120,6 +122,8 @@ class JujuModelObserver(ModelObserver):
 
         if not self.is_application_registered(application_id):
             return
+
+        self.n2vc.debug('Waiting for application completed: {}'.format(application_id))
 
         # application statuses: unknown, active, waiting
         # wait for a final state
@@ -139,6 +143,8 @@ class JujuModelObserver(ModelObserver):
 
         if not self.is_action_registered(action_id):
             return
+
+        self.n2vc.debug('Waiting for action completed: {}'.format(action_id))
 
         # action statuses: pending, running, completed, failed, cancelled
         # wait for a final state
@@ -193,8 +199,8 @@ class JujuModelObserver(ModelObserver):
                     .format(progress_timeout, entity.entity_type, entity.entity_id)
                 self.n2vc.debug(message)
                 raise N2VCTimeoutException(message=message, timeout='progress')
-        self.n2vc.debug('End of wait. Final state: {}, retries: {}'
-                        .format(entity.obj.__getattribute__(field_to_check), retries))
+        # self.n2vc.debug('End of wait. Final state: {}, retries: {}'
+        #                 .format(entity.obj.__getattribute__(field_to_check), retries))
         return retries
 
     async def on_change(self, delta, old, new, model):
@@ -203,8 +209,8 @@ class JujuModelObserver(ModelObserver):
             return
 
         # log
-        self.n2vc.debug('on_change(): type: {}, entity: {}, id: {}'
-                        .format(delta.type, delta.entity, new.entity_id))
+        # self.n2vc.debug('on_change(): type: {}, entity: {}, id: {}'
+        #                 .format(delta.type, delta.entity, new.entity_id))
 
         if delta.entity == 'machine':
 
