@@ -316,16 +316,16 @@ class K8sJujuConnector(K8sConnector):
             await self.login(cluster_uuid)
 
         ##
-        # Get or create the model, based on the namespace the cluster was
-        # instantiated with.
-        namespace = self.get_namespace(cluster_uuid)
+        # Get or create the model, based on the NS 
+        # uuid.
+        model_name = db_dict["filter"]["_id"]
 
-        self.log.debug("Checking for model named {}".format(namespace))
-        model = await self.get_model(namespace, cluster_uuid=cluster_uuid)
+        self.log.debug("Checking for model named {}".format(model_name))
+        model = await self.get_model(model_name, cluster_uuid=cluster_uuid)
         if not model:
             # Create the new model
-            self.log.debug("Adding model: {}".format(namespace))
-            model = await self.add_model(namespace, cluster_uuid=cluster_uuid)
+            self.log.debug("Adding model: {}".format(model_name))
+            model = await self.add_model(model_name, cluster_uuid=cluster_uuid)
 
         if model:
             # TODO: Instantiation parameters
