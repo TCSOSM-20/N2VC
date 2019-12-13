@@ -82,13 +82,14 @@ class K8sJujuConnector(K8sConnector):
         namespace: str = 'kube-system',
         reuse_cluster_uuid: str = None,
     ) -> (str, bool):
-        """Initialize a Kubernetes environment
+        """
+        It prepares a given K8s cluster environment to run Juju bundles.
 
-        :param k8s_creds dict: A dictionary containing the Kubernetes cluster
-        configuration
-        :param namespace str: The Kubernetes namespace to initialize
-
-        :return: UUID of the k8s context or raises an exception
+        :param k8s_creds: credentials to access a given K8s cluster, i.e. a valid '.kube/config'
+        :param namespace: optional namespace to be used for juju. By default, 'kube-system' will be used
+        :param reuse_cluster_uuid: existing cluster uuid for reuse
+        :return: uuid of the K8s cluster and True if connector has installed some software in the cluster
+        (on error, an exception will be raised)
         """
 
         """Bootstrapping
@@ -119,6 +120,16 @@ class K8sJujuConnector(K8sConnector):
         # TODO: Pull info from db based on the namespace #
         ##################################################
 
+        ###################################################
+        # TODO: Make it idempotent, calling add-k8s and   #
+        # bootstrap whenever reuse_cluster_uuid is passed #
+        # as parameter                                    #
+        # `init_env` is called to initialize the K8s      #
+        # cluster for juju. If this initialization fails, #
+        # it can be called again by LCM with the param    #
+        # reuse_cluster_uuid, e.g. to try to fix it.       #
+        ###################################################
+
         if not reuse_cluster_uuid:
             # This is a new cluster, so bootstrap it
 
@@ -131,7 +142,7 @@ class K8sJujuConnector(K8sConnector):
             loadbalancer = False if localk8s else True
 
             # Name the new k8s cloud
-            k8s_cloud = "{}-k8s".format(namespace)
+            k8s_cloud = "k8s-{}".format(cluster_uuid)
 
             print("Adding k8s cloud {}".format(k8s_cloud))
             await self.add_k8s(k8s_cloud, k8s_creds)

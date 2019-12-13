@@ -71,7 +71,8 @@ class K8sConnector(abc.ABC, Loggable):
             server (Tiller/Charm)
 
         :param k8s_creds: credentials to access a given K8s cluster, i.e. a valid '.kube/config'
-        :param namespace: optional namespace for helm tiller. By default, 'kube-system' will be used
+        :param namespace: optional namespace to be used for the K8s engine (helm tiller, juju).
+        By default, 'kube-system' will be used
         :param reuse_cluster_uuid: existing cluster uuid for reuse
         :return: uuid of the K8s cluster and True if connector has installed some software in the cluster
         (on error, an exception will be raised)
