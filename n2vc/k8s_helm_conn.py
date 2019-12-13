@@ -102,6 +102,17 @@ class K8sHelmConnector(K8sConnector):
             namespace: str = 'kube-system',
             reuse_cluster_uuid=None
     ) -> (str, bool):
+        """
+        It prepares a given K8s cluster environment to run Charts on both sides:
+            client (OSM)
+            server (Tiller)
+
+        :param k8s_creds: credentials to access a given K8s cluster, i.e. a valid '.kube/config'
+        :param namespace: optional namespace to be used for helm. By default, 'kube-system' will be used
+        :param reuse_cluster_uuid: existing cluster uuid for reuse
+        :return: uuid of the K8s cluster and True if connector has installed some software in the cluster
+        (on error, an exception will be raised)
+        """
 
         cluster_uuid = reuse_cluster_uuid
         if not cluster_uuid:
