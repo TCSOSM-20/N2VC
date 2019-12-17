@@ -157,6 +157,16 @@ class N2VCJujuConnector(N2VCConnector):
         else:
             self.warning('api_proxy is not configured. Support for native charms is disabled')
 
+        if 'enable_os_upgrade' in vca_config:
+            self.enable_os_upgrade = vca_config['enable_os_upgrade']
+        else:
+            self.enable_os_upgrade = True
+
+        if 'apt_mirror' in vca_config:
+            self.apt_mirror = vca_config['apt_mirror']
+        else:
+            self.apt_mirror = None
+
         self.debug('Arguments have been checked')
 
         # juju data
@@ -1093,6 +1103,7 @@ class N2VCJujuConnector(N2VCConnector):
 
     async def _juju_get_model(self, model_name: str) -> Model:
         """ Get a model object from juju controller
+        If the model does not exits, it creates it.
 
         :param str model_name: name of the model
         :returns Model: model obtained from juju controller or Exception
@@ -1121,9 +1132,16 @@ class N2VCJujuConnector(N2VCConnector):
 
             if model_name not in model_list:
                 self.info('Model {} does not exist. Creating new model...'.format(model_name))
+                config_dict = {'authorized-keys': self.public_key}
+                if self.apt_mirror:
+                    config_dict['apt-mirror'] = self.apt_mirror
+                if not self.enable_os_upgrade:
+                    config_dict['enable-os-refresh-update'] = False
+                    config_dict['enable-os-upgrade'] = False
+
                 model = await self.controller.add_model(
                     model_name=model_name,
-                    config={'authorized-keys': self.public_key}
+                    config=config_dict
                 )
                 self.info('New model created, name={}'.format(model_name))
             else:
