@@ -41,6 +41,7 @@ from juju.application import Application
 from juju.action import Action
 from juju.machine import Machine
 from juju.client import client
+from juju.errors import JujuAPIError
 
 from n2vc.provisioner import SSHProvisioner
 
@@ -467,10 +468,28 @@ class N2VCJujuConnector(N2VCConnector):
         self.debug('adding new relation between {} and {}, endpoints: {}, {}'
                    .format(ee_id_1, ee_id_2, endpoint_1, endpoint_2))
 
+        # check arguments
+        if not ee_id_1:
+            message = 'EE 1 is mandatory'
+            self.error(message)
+            raise N2VCBadArgumentsException(message=message, bad_args=['ee_id_1'])
+        if not ee_id_2:
+            message = 'EE 2 is mandatory'
+            self.error(message)
+            raise N2VCBadArgumentsException(message=message, bad_args=['ee_id_2'])
+        if not endpoint_1:
+            message = 'endpoint 1 is mandatory'
+            self.error(message)
+            raise N2VCBadArgumentsException(message=message, bad_args=['endpoint_1'])
+        if not endpoint_2:
+            message = 'endpoint 2 is mandatory'
+            self.error(message)
+            raise N2VCBadArgumentsException(message=message, bad_args=['endpoint_2'])
+
         if not self._authenticated:
             await self._juju_login()
 
-        # get model, application and machines
+        # get the model, the applications and the machines from the ee_id's
         model_1, app_1, machine_1 = self._get_ee_id_components(ee_id_1)
         model_2, app_2, machine_2 = self._get_ee_id_components(ee_id_2)
 
@@ -482,7 +501,13 @@ class N2VCJujuConnector(N2VCConnector):
 
         # add juju relations between two applications
         try:
-            self._juju_add_relation()
+            await self._juju_add_relation(
+                model_name=model_1,
+                application_name_1=app_1,
+                application_name_2=app_2,
+                relation_1=endpoint_1,
+                relation_2=endpoint_2
+            )
         except Exception as e:
             message = 'Error adding relation between {} and {}'.format(ee_id_1, ee_id_2)
             self.error(message)
@@ -1169,14 +1194,24 @@ class N2VCJujuConnector(N2VCConnector):
             relation_2: str
     ):
 
-        self.debug('adding relation')
-
         # get juju model and observer
         model = await self._juju_get_model(model_name=model_name)
 
         r1 = '{}:{}'.format(application_name_1, relation_1)
         r2 = '{}:{}'.format(application_name_2, relation_2)
-        await model.add_relation(relation1=r1, relation2=r2)
+
+        self.debug('adding relation: {} -> {}'.format(r1, r2))
+        try:
+            await model.add_relation(relation1=r1, relation2=r2)
+        except JujuAPIError as e:
+            # If one of the applications in the relationship doesn't exist, or the relation has already been added,
+            # let the operation fail silently.
+            if 'not found' in e.message:
+                return
+            if 'already exists' in e.message:
+                return
+            # another execption, raise it
+            raise e
 
     async def _juju_destroy_application(
         self,
