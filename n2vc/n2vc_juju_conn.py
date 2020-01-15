@@ -1240,6 +1240,15 @@ class N2VCJujuConnector(N2VCConnector):
         model = await self._juju_get_model(model_name=model_name)
         uuid = model.info.uuid
 
+        # destroy machines
+        machines = await model.get_machines()
+        for machine_id in machines:
+            try:
+                await self._juju_destroy_machine(model_name=model_name, machine_id=machine_id)
+            except Exception as e:
+                # ignore exceptions destroying machine
+                pass
+
         await self._juju_disconnect_model(model_name=model_name)
         self.juju_models[model_name] = None
         self.juju_observers[model_name] = None
