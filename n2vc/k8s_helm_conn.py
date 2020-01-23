@@ -770,6 +770,15 @@ class K8sHelmConnector(K8sConnector):
     def _generate_release_name(
             chart_name: str
     ):
+        # check embeded chart (file or dir)
+        if chart_name.startswith('/'):
+            # extract file or directory name
+            chart_name = chart_name[chart_name.rfind('/')+1:]
+        # check URL
+        elif '://' in chart_name:
+            # extract last portion of URL
+            chart_name = chart_name[chart_name.rfind('/')+1:]
+
         name = ''
         for c in chart_name:
             if c.isalpha() or c.isnumeric():
