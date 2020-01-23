@@ -1105,7 +1105,10 @@ class K8sHelmConnector(K8sConnector):
             msg = 'Exception executing command: {} -> {}'.format(command, e)
             if show_error_log:
                 self.error(msg)
-            return '', -1
+            if raise_exception_on_error:
+                raise e
+            else:
+                return '', -1
 
     def _remote_exec(
             self,
