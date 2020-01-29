@@ -12,9 +12,11 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+import asyncio
 import concurrent
 from .exceptions import NotImplemented
 
+import io
 import juju
 # from juju.bundle import BundleHandler
 from juju.controller import Controller
@@ -28,7 +30,6 @@ from n2vc.k8s_conn import K8sConnector
 import os
 # import re
 # import ssl
-import subprocess
 # from .vnf import N2VC
 
 import uuid
@@ -310,7 +311,7 @@ class K8sJujuConnector(K8sConnector):
             await self.login(cluster_uuid)
 
         ##
-        # Get or create the model, based on the NS 
+        # Get or create the model, based on the NS
         # uuid.
         model_name = db_dict["filter"]["_id"]
 
@@ -651,19 +652,28 @@ class K8sJujuConnector(K8sConnector):
 
         cmd = [self.juju_command, "add-k8s", "--local", cloud_name]
         print(cmd)
-        p = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # input=yaml.dump(credentials, Dumper=yaml.Dumper).encode("utf-8"),
-            input=credentials.encode("utf-8"),
-            # encoding='ascii'
-        )
-        retcode = p.returncode
-        print("add-k8s return code: {}".format(retcode))
 
-        if retcode > 0:
-            raise Exception(p.stderr)
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE,
+        )
+
+        # Feed the process the credentials
+        process.stdin.write(credentials.encode("utf-8"))
+        await process.stdin.drain()
+        process.stdin.close()
+
+        stdout, stderr = await process.communicate()
+
+        return_code = process.returncode
+
+        print("add-k8s return code: {}".format(return_code))
+
+        if return_code > 0:
+            raise Exception(stderr)
+
         return True
 
     async def add_model(
@@ -717,18 +727,20 @@ class K8sJujuConnector(K8sConnector):
             cluster_uuid, cloud_name
         ))
 
-        p = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # encoding='ascii'
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        retcode = p.returncode
 
-        if retcode > 0:
+        stdout, stderr = await process.communicate()
+
+        return_code = process.returncode
+
+        if return_code > 0:
             #
-            if b'already exists' not in p.stderr:
-                raise Exception(p.stderr)
+            if b'already exists' not in stderr:
+                raise Exception(stderr)
 
         return True
 
@@ -752,18 +764,20 @@ class K8sJujuConnector(K8sConnector):
             cluster_uuid
         ]
 
-        p = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # encoding='ascii'
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        retcode = p.returncode
 
-        if retcode > 0:
+        stdout, stderr = await process.communicate()
+
+        return_code = process.returncode
+
+        if return_code > 0:
             #
-            if 'already exists' not in p.stderr:
-                raise Exception(p.stderr)
+            if 'already exists' not in stderr:
+                raise Exception(stderr)
 
     def get_config(
         self,
@@ -953,29 +967,33 @@ class K8sJujuConnector(K8sConnector):
 
         # Remove the bootstrapped controller
         cmd = [self.juju_command, "remove-k8s", "--client", cloud_name]
-        p = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # encoding='ascii'
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        retcode = p.returncode
 
-        if retcode > 0:
-            raise Exception(p.stderr)
+        stdout, stderr = await process.communicate()
+
+        return_code = process.returncode
+
+        if return_code > 0:
+            raise Exception(stderr)
 
         # Remove the cloud from the local config
         cmd = [self.juju_command, "remove-cloud", "--client", cloud_name]
-        p = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # encoding='ascii'
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        retcode = p.returncode
 
-        if retcode > 0:
-            raise Exception(p.stderr)
+        stdout, stderr = await process.communicate()
+
+        return_code = process.returncode
+
+        if return_code > 0:
+            raise Exception(stderr)
 
         return True
 
