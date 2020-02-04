@@ -302,7 +302,8 @@ class K8sJujuConnector(K8sConnector):
         atomic: bool = True,
         timeout: float = 300,
         params: dict = None,
-        db_dict: dict = None
+        db_dict: dict = None,
+        kdu_name: str = None
     ) -> bool:
         """Install a bundle
 
@@ -313,6 +314,7 @@ class K8sJujuConnector(K8sConnector):
         :param timeout int: The time, in seconds, to wait for the install
                             to finish
         :param params dict: Key-value pairs of instantiation parameters
+        :param kdu_name: Name of the KDU instance to be installed
 
         :return: If successful, returns ?
         """
@@ -324,14 +326,17 @@ class K8sJujuConnector(K8sConnector):
         ##
         # Get or create the model, based on the NS
         # uuid.
-        model_name = db_dict["filter"]["_id"]
+        if kdu_name:
+            kdu_instance = "{}-{}".format(kdu_name, db_dict["filter"]["_id"])
+        else:
+            kdu_instance = db_dict["filter"]["_id"]
 
-        self.log.debug("Checking for model named {}".format(model_name))
-        model = await self.get_model(model_name, cluster_uuid=cluster_uuid)
+        self.log.debug("Checking for model named {}".format(kdu_instance))
+        model = await self.get_model(kdu_instance, cluster_uuid=cluster_uuid)
         if not model:
             # Create the new model
-            self.log.debug("Adding model: {}".format(model_name))
-            model = await self.add_model(model_name, cluster_uuid=cluster_uuid)
+            self.log.debug("Adding model: {}".format(kdu_instance))
+            model = await self.add_model(kdu_instance, cluster_uuid=cluster_uuid)
 
         if model:
             # TODO: Instantiation parameters
@@ -398,7 +403,7 @@ class K8sJujuConnector(K8sConnector):
                 print("[install] Disconnecting model")
                 await model.disconnect()
 
-            return True
+            return kdu_instance
         raise Exception("Unable to install")
 
     async def instances_list(
@@ -511,35 +516,18 @@ class K8sJujuConnector(K8sConnector):
     async def uninstall(
         self,
         cluster_uuid: str,
-        kdu_instance: str,
+        kdu_instance: str
     ) -> bool:
         """Uninstall a KDU instance
 
-        :param cluster_uuid str: The UUID of the cluster to uninstall
+        :param cluster_uuid str: The UUID of the cluster
         :param kdu_instance str: The unique name of the KDU instance
 
         :return: Returns True if successful, or raises an exception
         """
-        removed = False
+        await self.controller.destroy_models(kdu_instance)
 
-        # Remove an application from the model
-        model = await self.get_model(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid)
-
-        if model:
-            # Get the application
-            if kdu_instance not in model.applications:
-                # TODO: Raise a named exception
-                raise Exception("Application not found.")
-
-            application = model.applications[kdu_instance]
-
-            # Destroy the application
-            await application.destroy()
-
-            # TODO: Verify removal
-
-            removed = True
-        return removed
+        return True
 
     """Introspection"""
     async def inspect_kdu(
