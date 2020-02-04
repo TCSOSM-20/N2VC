@@ -370,8 +370,8 @@ class K8sHelmConnector(K8sConnector):
                 if result is not None:
                     # instance already exists: generate a new one
                     kdu_instance = None
-            except Exception as e:
-                kdu_instance = None
+            except K8sException:
+                pass
 
         # helm repo install
         command = '{} install {} --output yaml --kubeconfig={} --home={} {} {} --name={} {} {}'\
@@ -1113,7 +1113,7 @@ class K8sHelmConnector(K8sConnector):
                 self.debug('Return code: {}'.format(return_code))
 
             if raise_exception_on_error and return_code != 0:
-                raise Exception(output)
+                raise K8sException(output)
 
             if encode_utf8:
                 output = output.encode('utf-8').strip()
@@ -1121,12 +1121,13 @@ class K8sHelmConnector(K8sConnector):
 
             return output, return_code
 
+        except K8sException:
+            raise
         except Exception as e:
             msg = 'Exception executing command: {} -> {}'.format(command, e)
-            if show_error_log:
-                self.error(msg)
+            self.error(msg)
             if raise_exception_on_error:
-                raise e
+                raise K8sException(e) from e
             else:
                 return '', -1
 
