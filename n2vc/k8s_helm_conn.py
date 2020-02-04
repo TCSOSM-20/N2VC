@@ -327,7 +327,8 @@ class K8sHelmConnector(K8sConnector):
             atomic: bool = True,
             timeout: float = 300,
             params: dict = None,
-            db_dict: dict = None
+            db_dict: dict = None,
+            kdu_name: str = None
     ):
 
         self.debug('installing {} in cluster {}'.format(kdu_model, cluster_uuid))
