@@ -20,7 +20,6 @@
 # contact with: nfvlabs@tid.es
 ##
 
-import paramiko
 import subprocess
 import os
 import shutil
@@ -1131,34 +1130,6 @@ class K8sHelmConnector(K8sConnector):
                 raise K8sException(e) from e
             else:
                 return '', -1
-
-    def _remote_exec(
-            self,
-            hostname: str,
-            username: str,
-            password: str,
-            command: str,
-            timeout: int = 10
-    ) -> (str, int):
-
-        command = K8sHelmConnector._remove_multiple_spaces(command)
-        self.debug('Executing sync remote ssh command: {}'.format(command))
-
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=hostname, username=username, password=password)
-        ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(command=command, timeout=timeout)
-        output = ssh_stdout.read().decode('utf-8')
-        error = ssh_stderr.read().decode('utf-8')
-        if error:
-            self.error('ERROR: {}'.format(error))
-            return_code = 1
-        else:
-            return_code = 0
-        output = output.replace('\\n', '\n')
-        self.debug('OUTPUT: {}'.format(output))
-
-        return output, return_code
 
     def _check_file_exists(self, filename: str, exception_if_not_exists: bool = False):
         self.debug('Checking if file {} exists...'.format(filename))
