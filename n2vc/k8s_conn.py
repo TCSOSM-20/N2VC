@@ -123,6 +123,20 @@ class K8sConnector(abc.ABC, Loggable):
         """
 
     @abc.abstractmethod
+    async def synchronize_repos(
+            self,
+            cluster_uuid: str,
+            name: str
+    ):
+        """
+        Synchronizes the list of repositories created in the cluster with
+        the repositories added by the NBI
+
+        :param cluster_uuid: the cluster
+        :return: List of repositories deleted from the cluster and dictionary with repos added
+        """
+
+    @abc.abstractmethod
     async def reset(
             self,
             cluster_uuid: str,
