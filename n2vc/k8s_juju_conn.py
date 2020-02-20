@@ -248,6 +248,16 @@ class K8sJujuConnector(K8sConnector):
     ):
         raise NotImplemented()
 
+    async def synchronize_repos(
+        self,
+        cluster_uuid: str,
+        name: str
+    ):
+        """
+        Returns None as currently add_repo is not implemented
+        """
+        return None
+
     """Reset"""
     async def reset(
             self,
