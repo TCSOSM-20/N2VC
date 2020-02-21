@@ -585,15 +585,15 @@ class N2VCJujuConnector(N2VCConnector):
                                 .format(ee_id, application_name, e))
 
         # destroy the machine
-        try:
-            await self._juju_destroy_machine(
-                model_name=model_name,
-                machine_id=machine_id,
-                total_timeout=total_timeout
-            )
-        except Exception as e:
-            raise N2VCException(message='Error deleting execution environment {} (machine {}) : {}'
-                                .format(ee_id, machine_id, e))
+        # try: 
+        #     await self._juju_destroy_machine(
+        #         model_name=model_name,
+        #         machine_id=machine_id,
+        #         total_timeout=total_timeout
+        #     )
+        # except Exception as e:
+        #     raise N2VCException(message='Error deleting execution environment {} (machine {}) : {}'
+        #                         .format(ee_id, machine_id, e))
 
         self.log.info('Execution environment {} deleted'.format(ee_id))
 
@@ -1223,9 +1223,11 @@ class N2VCJujuConnector(N2VCConnector):
 
         # get juju model and observer
         model = await self._juju_get_model(model_name=model_name)
+        observer = self.juju_observers[model_name]
 
         application = model.applications.get(application_name)
         if application:
+            observer.unregister_application(application_name)
             await application.destroy()
         else:
             self.log.debug('Application not found: {}'.format(application_name))
@@ -1244,10 +1246,12 @@ class N2VCJujuConnector(N2VCConnector):
 
         # get juju model and observer
         model = await self._juju_get_model(model_name=model_name)
+        observer = self.juju_observers[model_name]
 
         machines = await model.get_machines()
         if machine_id in machines:
             machine = model.machines[machine_id]
+            observer.unregister_machine(machine_id)
             await machine.destroy(force=True)
             # max timeout
             end = time.time() + total_timeout
