@@ -23,8 +23,6 @@ from juju.controller import Controller
 from juju.model import Model
 from juju.errors import JujuAPIError, JujuError
 
-import logging
-
 from n2vc.k8s_conn import K8sConnector
 
 import os
@@ -44,7 +42,7 @@ class K8sJujuConnector(K8sConnector):
             db: object,
             kubectl_command: str = '/usr/bin/kubectl',
             juju_command: str = '/usr/bin/juju',
-            log=None,
+            log: object = None,
             on_update_db=None,
     ):
         """
@@ -64,16 +62,15 @@ class K8sJujuConnector(K8sConnector):
         )
 
         self.fs = fs
-        self.info('Initializing K8S Juju connector')
+        self.log.debug('Initializing K8S Juju connector')
 
         self.authenticated = False
         self.models = {}
-        self.log = logging.getLogger(__name__)
 
         self.juju_command = juju_command
         self.juju_secret = ""
 
-        self.info('K8S Juju connector initialized')
+        self.log.debug('K8S Juju connector initialized')
 
     """Initialization"""
     async def init_env(
@@ -144,19 +141,19 @@ class K8sJujuConnector(K8sConnector):
             # Name the new k8s cloud
             k8s_cloud = "k8s-{}".format(cluster_uuid)
 
-            print("Adding k8s cloud {}".format(k8s_cloud))
+            self.log.debug("Adding k8s cloud {}".format(k8s_cloud))
             await self.add_k8s(k8s_cloud, k8s_creds)
 
             # Bootstrap Juju controller
-            print("Bootstrapping...")
+            self.log.debug("Bootstrapping...")
             await self.bootstrap(k8s_cloud, cluster_uuid, loadbalancer)
-            print("Bootstrap done.")
+            self.log.debug("Bootstrap done.")
 
             # Get the controller information
 
             # Parse ~/.local/share/juju/controllers.yaml
             # controllers.testing.api-endpoints|ca-cert|uuid
-            print("Getting controller endpoints")
+            self.log.debug("Getting controller endpoints")
             with open(os.path.expanduser(
                 "~/.local/share/juju/controllers.yaml"
             )) as f:
@@ -168,7 +165,7 @@ class K8sJujuConnector(K8sConnector):
 
             # Parse ~/.local/share/juju/accounts
             # controllers.testing.user|password
-            print("Getting accounts")
+            self.log.debug("Getting accounts")
             with open(os.path.expanduser(
                 "~/.local/share/juju/accounts.yaml"
             )) as f:
@@ -177,11 +174,6 @@ class K8sJujuConnector(K8sConnector):
 
                 self.juju_user = controller['user']
                 self.juju_secret = controller['password']
-
-            print("user: {}".format(self.juju_user))
-            print("secret: {}".format(self.juju_secret))
-            print("endpoint: {}".format(self.juju_endpoint))
-            print("ca-cert: {}".format(self.juju_ca_cert))
 
             # raise Exception("EOL")
 
@@ -198,7 +190,7 @@ class K8sJujuConnector(K8sConnector):
 
             # Store the cluster configuration so it
             # can be used for subsequent calls
-            print("Setting config")
+            self.log.debug("Setting config")
             await self.set_config(cluster_uuid, config)
 
         else:
@@ -281,26 +273,26 @@ class K8sJujuConnector(K8sConnector):
                 # Destroy the model
                 namespace = self.get_namespace(cluster_uuid)
                 if await self.has_model(namespace):
-                    print("[reset] Destroying model")
+                    self.log.debug("[reset] Destroying model")
                     await self.controller.destroy_model(
                         namespace,
                         destroy_storage=True
                     )
 
                 # Disconnect from the controller
-                print("[reset] Disconnecting controller")
+                self.log.debug("[reset] Disconnecting controller")
                 await self.logout()
 
                 # Destroy the controller (via CLI)
-                print("[reset] Destroying controller")
+                self.log.debug("[reset] Destroying controller")
                 await self.destroy_controller(cluster_uuid)
 
-                print("[reset] Removing k8s cloud")
+                self.log.debug("[reset] Removing k8s cloud")
                 k8s_cloud = "k8s-{}".format(cluster_uuid)
                 await self.remove_cloud(k8s_cloud)
 
         except Exception as ex:
-            print("Caught exception during reset: {}".format(ex))
+            self.log.debug("Caught exception during reset: {}".format(ex))
 
         return True
 
@@ -331,7 +323,7 @@ class K8sJujuConnector(K8sConnector):
         """
 
         if not self.authenticated:
-            print("[install] Logging in to the controller")
+            self.log.debug("[install] Logging in to the controller")
             await self.login(cluster_uuid)
 
         ##
@@ -377,20 +369,20 @@ class K8sJujuConnector(K8sConnector):
                 # Raise named exception that the bundle could not be found
                 raise Exception()
 
-            print("[install] deploying {}".format(bundle))
+            self.log.debug("[install] deploying {}".format(bundle))
             await model.deploy(bundle)
 
             # Get the application
             if atomic:
                 # applications = model.applications
-                print("[install] Applications: {}".format(model.applications))
+                self.log.debug("[install] Applications: {}".format(model.applications))
                 for name in model.applications:
-                    print("[install] Waiting for {} to settle".format(name))
+                    self.log.debug("[install] Waiting for {} to settle".format(name))
                     application = model.applications[name]
                     try:
                         # It's not enough to wait for all units to be active;
                         # the application status needs to be active as well.
-                        print("Waiting for all units to be active...")
+                        self.log.debug("Waiting for all units to be active...")
                         await model.block_until(
                             lambda: all(
                                 unit.agent_status == 'idle'
@@ -401,16 +393,16 @@ class K8sJujuConnector(K8sConnector):
                             ),
                             timeout=timeout
                         )
-                        print("All units active.")
+                        self.log.debug("All units active.")
 
                     except concurrent.futures._base.TimeoutError:
-                        print("[install] Timeout exceeded; resetting cluster")
+                        self.log.debug("[install] Timeout exceeded; resetting cluster")
                         await self.reset(cluster_uuid)
                         return False
 
             # Wait for the application to be active
             if model.is_connected():
-                print("[install] Disconnecting model")
+                self.log.debug("[install] Disconnecting model")
                 await model.disconnect()
 
             return kdu_instance
@@ -485,9 +477,9 @@ class K8sJujuConnector(K8sConnector):
             """
             # TODO: This should be returned in an agreed-upon format
             for name in bundle['applications']:
-                print(model.applications)
+                self.log.debug(model.applications)
                 application = model.applications[name]
-                print(application)
+                self.log.debug(application)
 
                 path = bundle['applications'][name]['charm']
 
@@ -669,7 +661,7 @@ class K8sJujuConnector(K8sConnector):
         """
 
         cmd = [self.juju_command, "add-k8s", "--local", cloud_name]
-        print(cmd)
+        self.log.debug(cmd)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -687,7 +679,7 @@ class K8sJujuConnector(K8sConnector):
 
         return_code = process.returncode
 
-        print("add-k8s return code: {}".format(return_code))
+        self.log.debug("add-k8s return code: {}".format(return_code))
 
         if return_code > 0:
             raise Exception(stderr)
@@ -747,7 +739,7 @@ class K8sJujuConnector(K8sConnector):
             """
             cmd = [self.juju_command, "bootstrap", cloud_name, cluster_uuid, "--config", "controller-service-type=loadbalancer"]
 
-        print("Bootstrapping controller {} in cloud {}".format(
+        self.log.debug("Bootstrapping controller {} in cloud {}".format(
             cluster_uuid, cloud_name
         ))
 
@@ -950,7 +942,7 @@ class K8sJujuConnector(K8sConnector):
                 self.authenticated = True
                 self.log.debug("JujuApi: Logged into controller")
             except Exception as ex:
-                print(ex)
+                self.log.debug(ex)
                 self.log.debug("Caught exception: {}".format(ex))
                 pass
         else:
@@ -959,12 +951,12 @@ class K8sJujuConnector(K8sConnector):
 
     async def logout(self):
         """Logout of the Juju controller."""
-        print("[logout]")
+        self.log.debug("[logout]")
         if not self.authenticated:
             return False
 
         for model in self.models:
-            print("Logging out of model {}".format(model))
+            self.log.debug("Logging out of model {}".format(model))
             await self.models[model].disconnect()
 
         if self.controller:
@@ -1037,7 +1029,7 @@ class K8sJujuConnector(K8sConnector):
 
         cluster_config = "{}/{}.yaml".format(self.fs.path, cluster_uuid)
         if not os.path.exists(cluster_config):
-            print("Writing config to {}".format(cluster_config))
+            self.log.debug("Writing config to {}".format(cluster_config))
             with open(cluster_config, 'w') as f:
                 f.write(yaml.dump(config, Dumper=yaml.Dumper))
 
