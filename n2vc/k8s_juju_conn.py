@@ -218,15 +218,15 @@ class K8sJujuConnector(K8sConnector):
             await self.login(cluster_uuid)
 
         # We're creating a new cluster
-        print("Getting model {}".format(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid))
-        model = await self.get_model(
-            self.get_namespace(cluster_uuid),
-            cluster_uuid=cluster_uuid
-        )
+        #print("Getting model {}".format(self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid))
+        #model = await self.get_model(
+        #    self.get_namespace(cluster_uuid),
+        #    cluster_uuid=cluster_uuid
+        #)
 
-        # Disconnect from the model
-        if model and model.is_connected():
-            await model.disconnect()
+        ## Disconnect from the model
+        #if model and model.is_connected():
+        #    await model.disconnect()
 
         return cluster_uuid, True
 
@@ -279,19 +279,20 @@ class K8sJujuConnector(K8sConnector):
 
                 # Disconnect from the controller
                 print("[reset] Disconnecting controller")
-                await self.controller.disconnect()
+                await self.logout()
 
                 # Destroy the controller (via CLI)
                 print("[reset] Destroying controller")
                 await self.destroy_controller(cluster_uuid)
 
                 print("[reset] Removing k8s cloud")
-                namespace = self.get_namespace(cluster_uuid)
-                k8s_cloud = "{}-k8s".format(namespace)
+                k8s_cloud = "k8s-{}".format(cluster_uuid)
                 await self.remove_cloud(k8s_cloud)
 
         except Exception as ex:
             print("Caught exception during reset: {}".format(ex))
+
+        return True
 
     """Deployment"""
 
@@ -332,11 +333,10 @@ class K8sJujuConnector(K8sConnector):
             kdu_instance = db_dict["filter"]["_id"]
 
         self.log.debug("Checking for model named {}".format(kdu_instance))
-        model = await self.get_model(kdu_instance, cluster_uuid=cluster_uuid)
-        if not model:
-            # Create the new model
-            self.log.debug("Adding model: {}".format(kdu_instance))
-            model = await self.add_model(kdu_instance, cluster_uuid=cluster_uuid)
+
+        # Create the new model
+        self.log.debug("Adding model: {}".format(kdu_instance))
+        model = await self.add_model(kdu_instance, cluster_uuid=cluster_uuid)
 
         if model:
             # TODO: Instantiation parameters
@@ -525,7 +525,16 @@ class K8sJujuConnector(K8sConnector):
 
         :return: Returns True if successful, or raises an exception
         """
+        if not self.authenticated:
+            self.log.debug("[uninstall] Connecting to controller")
+            await self.login(cluster_uuid)
+
+        self.log.debug("[uninstall] Destroying model")
+
         await self.controller.destroy_models(kdu_instance)
+
+        self.log.debug("[uninstall] Model destroyed and disconnecting")
+        await self.logout()
 
         return True
 
@@ -692,10 +701,16 @@ class K8sJujuConnector(K8sConnector):
             await self.login(cluster_uuid)
 
         self.log.debug("Adding model '{}' to cluster_uuid '{}'".format(model_name, cluster_uuid))
-        model = await self.controller.add_model(
-            model_name,
-            config={'authorized-keys': self.juju_public_key}
-        )
+        try:
+            model = await self.controller.add_model(
+                model_name,
+                config={'authorized-keys': self.juju_public_key}
+            )
+        except Exception as ex:
+            self.log.debug(ex)
+            self.log.debug("Caught exception: {}".format(ex))
+            pass
+
         return model
 
     async def bootstrap(
