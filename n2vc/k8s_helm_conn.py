@@ -1121,6 +1121,8 @@ class K8sHelmConnector(K8sConnector):
 
             return output, return_code
 
+        except asyncio.CancelledError:
+            raise
         except K8sException:
             raise
         except Exception as e:
