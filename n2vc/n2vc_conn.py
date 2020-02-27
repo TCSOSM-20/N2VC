@@ -95,7 +95,7 @@ class N2VCConnector(abc.ABC, Loggable):
         if fs is None:
             raise N2VCBadArgumentsException('Argument fs is mandatory', ['fs'])
 
-        self.info('url={}, username={}, vca_config={}'.format(url, username, vca_config))
+        self.log.info('url={}, username={}, vca_config={}'.format(url, username, vca_config))
 
         # store arguments into self
         self.db = db
@@ -399,10 +399,10 @@ class N2VCConnector(abc.ABC, Loggable):
             entity_type: str
     ):
         if not db_dict:
-            self.debug('No db_dict => No database write')
+            self.log.debug('No db_dict => No database write')
             return
 
-        # self.debug('status={} / detailed-status={} / VCA-status={} / entity_type={}'
+        # self.log.debug('status={} / detailed-status={} / VCA-status={} / entity_type={}'
         #            .format(str(status.value), detailed_status, vca_status, entity_type))
 
         try:
@@ -436,9 +436,9 @@ class N2VCConnector(abc.ABC, Loggable):
 
         except DbException as e:
             if e.http_code == HTTPStatus.NOT_FOUND:
-                self.error('NOT_FOUND error: Exception writing status to database: {}'.format(e))
+                self.log.error('NOT_FOUND error: Exception writing status to database: {}'.format(e))
             else:
-                self.info('Exception writing status to database: {}'.format(e))
+                self.log.info('Exception writing status to database: {}'.format(e))
 
 
 def juju_status_2_osm_status(type: str, status: str) -> N2VCDeploymentStatus:
