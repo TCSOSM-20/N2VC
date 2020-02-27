@@ -50,13 +50,13 @@ class K8sConnector(abc.ABC, Loggable):
         # parent class
         Loggable.__init__(self, log=log, log_to_console=True, prefix='\nK8S')
 
-        self.info('Initializing generic K8S connector')
+        self.log.info('Initializing generic K8S connector')
 
         # the database and update callback
         self.db = db
         self.on_update_db = on_update_db
 
-        self.info('K8S generic connector initialized')
+        self.log.info('K8S generic connector initialized')
 
     @abc.abstractmethod
     async def init_env(
@@ -333,7 +333,7 @@ class K8sConnector(abc.ABC, Loggable):
             self.warning('No db_dict => No database write')
             return False
 
-        self.debug('status={}'.format(status))
+        self.log.debug('status={}'.format(status))
 
         try:
 
@@ -366,5 +366,5 @@ class K8sConnector(abc.ABC, Loggable):
             return True
 
         except Exception as e:
-            self.info('Exception writing status to database: {}'.format(e))
+            self.log.info('Exception writing status to database: {}'.format(e))
             return False

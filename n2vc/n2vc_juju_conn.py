@@ -86,7 +86,7 @@ class N2VCJujuConnector(N2VCConnector):
         logging.getLogger('juju.client.connection').setLevel(logging.WARN)
         logging.getLogger('model').setLevel(logging.WARN)
 
-        self.info('Initializing N2VC juju connector...')
+        self.log.info('Initializing N2VC juju connector...')
 
         """
         ##############################################################
@@ -143,7 +143,7 @@ class N2VCJujuConnector(N2VCConnector):
                     cacert,
                 )
             except binascii.Error as e:
-                self.debug("Caught binascii.Error: {}".format(e))
+                self.log.debug("Caught binascii.Error: {}".format(e))
                 raise N2VCInvalidCertificate(message="Invalid CA Certificate")
 
             return cacert
@@ -154,7 +154,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         if 'api_proxy' in vca_config:
             self.api_proxy = vca_config['api_proxy']
-            self.debug('api_proxy for native charms configured: {}'.format(self.api_proxy))
+            self.log.debug('api_proxy for native charms configured: {}'.format(self.api_proxy))
         else:
             self.warning('api_proxy is not configured. Support for native charms is disabled')
 
@@ -168,7 +168,7 @@ class N2VCJujuConnector(N2VCConnector):
         else:
             self.apt_mirror = None
 
-        self.debug('Arguments have been checked')
+        self.log.debug('Arguments have been checked')
 
         # juju data
         self.controller = None         # it will be filled when connect to juju
@@ -181,11 +181,11 @@ class N2VCJujuConnector(N2VCConnector):
         # create juju pub key file in lcm container at ./local/share/juju/ssh/juju_id_rsa.pub
         self._create_juju_public_key()
 
-        self.info('N2VC juju connector initialized')
+        self.log.info('N2VC juju connector initialized')
 
     async def get_status(self, namespace: str, yaml_format: bool = True):
 
-        # self.info('Getting NS status. namespace: {}'.format(namespace))
+        # self.log.info('Getting NS status. namespace: {}'.format(namespace))
 
         if not self._authenticated:
             await self._juju_login()
@@ -195,7 +195,7 @@ class N2VCJujuConnector(N2VCConnector):
         model_name = ns_id
         if model_name is None:
             msg = 'Namespace {} not valid'.format(namespace)
-            self.error(msg)
+            self.log.error(msg)
             raise N2VCBadArgumentsException(msg, ['namespace'])
 
         # get juju model (create model if needed)
@@ -217,7 +217,7 @@ class N2VCJujuConnector(N2VCConnector):
         total_timeout: float = None
     ) -> (str, dict):
 
-        self.info('Creating execution environment. namespace: {}, reuse_ee_id: {}'.format(namespace, reuse_ee_id))
+        self.log.info('Creating execution environment. namespace: {}, reuse_ee_id: {}'.format(namespace, reuse_ee_id))
 
         if not self._authenticated:
             await self._juju_login()
@@ -232,7 +232,7 @@ class N2VCJujuConnector(N2VCConnector):
             # application name
             application_name = self._get_application_name(namespace=namespace)
 
-        self.debug('model name: {}, application name:  {}, machine_id: {}'
+        self.log.debug('model name: {}, application name:  {}, machine_id: {}'
                    .format(model_name, application_name, machine_id))
 
         # create or reuse a new juju machine
@@ -247,7 +247,7 @@ class N2VCJujuConnector(N2VCConnector):
             )
         except Exception as e:
             message = 'Error creating machine on juju: {}'.format(e)
-            self.error(message)
+            self.log.error(message)
             raise N2VCException(message=message)
 
         # id for the execution environment
@@ -256,13 +256,13 @@ class N2VCJujuConnector(N2VCConnector):
             application_name=application_name,
             machine_id=str(machine.entity_id)
         )
-        self.debug('ee_id: {}'.format(ee_id))
+        self.log.debug('ee_id: {}'.format(ee_id))
 
         # new machine credentials
         credentials = dict()
         credentials['hostname'] = machine.dns_name
 
-        self.info('Execution environment created. ee_id: {}, credentials: {}'.format(ee_id, credentials))
+        self.log.info('Execution environment created. ee_id: {}, credentials: {}'.format(ee_id, credentials))
 
         return ee_id, credentials
 
@@ -278,7 +278,7 @@ class N2VCJujuConnector(N2VCConnector):
         if not self._authenticated:
             await self._juju_login()
 
-        self.info('Registering execution environment. namespace={}, credentials={}'.format(namespace, credentials))
+        self.log.info('Registering execution environment. namespace={}, credentials={}'.format(namespace, credentials))
 
         if credentials is None:
             raise N2VCBadArgumentsException(message='credentials are mandatory', bad_args=['credentials'])
@@ -315,10 +315,10 @@ class N2VCJujuConnector(N2VCConnector):
                 total_timeout=total_timeout
             )
         except Exception as e:
-            self.error('Error registering machine: {}'.format(e))
+            self.log.error('Error registering machine: {}'.format(e))
             raise N2VCException(message='Error registering machine on juju: {}'.format(e))
 
-        self.info('Machine registered: {}'.format(machine_id))
+        self.log.info('Machine registered: {}'.format(machine_id))
 
         # id for the execution environment
         ee_id = N2VCJujuConnector._build_ee_id(
@@ -327,7 +327,7 @@ class N2VCJujuConnector(N2VCConnector):
             machine_id=str(machine_id)
         )
 
-        self.info('Execution environment registered. ee_id: {}'.format(ee_id))
+        self.log.info('Execution environment registered. ee_id: {}'.format(ee_id))
 
         return ee_id
 
@@ -340,7 +340,7 @@ class N2VCJujuConnector(N2VCConnector):
         total_timeout: float = None
     ):
 
-        self.info('Installing configuration sw on ee_id: {}, artifact path: {}, db_dict: {}'
+        self.log.info('Installing configuration sw on ee_id: {}, artifact path: {}, db_dict: {}'
                   .format(ee_id, artifact_path, db_dict))
 
         if not self._authenticated:
@@ -356,7 +356,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         try:
             model_name, application_name, machine_id = N2VCJujuConnector._get_ee_id_components(ee_id=ee_id)
-            self.debug('model: {}, application: {}, machine: {}'.format(model_name, application_name, machine_id))
+            self.log.debug('model: {}, application: {}, machine: {}'.format(model_name, application_name, machine_id))
         except Exception as e:
             raise N2VCBadArgumentsException(
                 message='ee_id={} is not a valid execution environment id'.format(ee_id),
@@ -390,7 +390,7 @@ class N2VCJujuConnector(N2VCConnector):
         except Exception as e:
             raise N2VCException(message='Error desploying charm into ee={} : {}'.format(ee_id, e))
 
-        self.info('Configuration sw installed')
+        self.log.info('Configuration sw installed')
 
     async def get_ee_ssh_public__key(
         self,
@@ -400,7 +400,7 @@ class N2VCJujuConnector(N2VCConnector):
         total_timeout: float = None
     ) -> str:
 
-        self.info('Generating priv/pub key pair and get pub key on ee_id: {}, db_dict: {}'.format(ee_id, db_dict))
+        self.log.info('Generating priv/pub key pair and get pub key on ee_id: {}, db_dict: {}'.format(ee_id, db_dict))
 
         if not self._authenticated:
             await self._juju_login()
@@ -413,7 +413,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         try:
             model_name, application_name, machine_id = N2VCJujuConnector._get_ee_id_components(ee_id=ee_id)
-            self.debug('model: {}, application: {}, machine: {}'.format(model_name, application_name, machine_id))
+            self.log.debug('model: {}, application: {}, machine: {}'.format(model_name, application_name, machine_id))
         except Exception as e:
             raise N2VCBadArgumentsException(
                 message='ee_id={} is not a valid execution environment id'.format(ee_id),
@@ -437,7 +437,7 @@ class N2VCJujuConnector(N2VCConnector):
                 total_timeout=total_timeout
             )
         except Exception as e:
-            self.info('Cannot execute action generate-ssh-key: {}\nContinuing...'.format(e))
+            self.log.info('Cannot execute action generate-ssh-key: {}\nContinuing...'.format(e))
 
         # execute action: get-ssh-public-key
         try:
@@ -451,7 +451,7 @@ class N2VCJujuConnector(N2VCConnector):
             )
         except Exception as e:
             msg = 'Cannot execute action get-ssh-public-key: {}\n'.format(e)
-            self.info(msg)
+            self.log.info(msg)
             raise e
 
         # return public key if exists
@@ -465,25 +465,25 @@ class N2VCJujuConnector(N2VCConnector):
         endpoint_2: str
     ):
 
-        self.debug('adding new relation between {} and {}, endpoints: {}, {}'
+        self.log.debug('adding new relation between {} and {}, endpoints: {}, {}'
                    .format(ee_id_1, ee_id_2, endpoint_1, endpoint_2))
 
         # check arguments
         if not ee_id_1:
             message = 'EE 1 is mandatory'
-            self.error(message)
+            self.log.error(message)
             raise N2VCBadArgumentsException(message=message, bad_args=['ee_id_1'])
         if not ee_id_2:
             message = 'EE 2 is mandatory'
-            self.error(message)
+            self.log.error(message)
             raise N2VCBadArgumentsException(message=message, bad_args=['ee_id_2'])
         if not endpoint_1:
             message = 'endpoint 1 is mandatory'
-            self.error(message)
+            self.log.error(message)
             raise N2VCBadArgumentsException(message=message, bad_args=['endpoint_1'])
         if not endpoint_2:
             message = 'endpoint 2 is mandatory'
-            self.error(message)
+            self.log.error(message)
             raise N2VCBadArgumentsException(message=message, bad_args=['endpoint_2'])
 
         if not self._authenticated:
@@ -496,7 +496,7 @@ class N2VCJujuConnector(N2VCConnector):
         # model must be the same
         if model_1 != model_2:
             message = 'EE models are not the same: {} vs {}'.format(ee_id_1, ee_id_2)
-            self.error(message)
+            self.log.error(message)
             raise N2VCBadArgumentsException(message=message, bad_args=['ee_id_1', 'ee_id_2'])
 
         # add juju relations between two applications
@@ -510,7 +510,7 @@ class N2VCJujuConnector(N2VCConnector):
             )
         except Exception as e:
             message = 'Error adding relation between {} and {}'.format(ee_id_1, ee_id_2)
-            self.error(message)
+            self.log.error(message)
             raise N2VCException(message=message)
 
     async def remove_relation(
@@ -519,7 +519,7 @@ class N2VCJujuConnector(N2VCConnector):
         if not self._authenticated:
             await self._juju_login()
         # TODO
-        self.info('Method not implemented yet')
+        self.log.info('Method not implemented yet')
         raise NotImplemented()
 
     async def deregister_execution_environments(
@@ -528,7 +528,7 @@ class N2VCJujuConnector(N2VCConnector):
         if not self._authenticated:
             await self._juju_login()
         # TODO
-        self.info('Method not implemented yet')
+        self.log.info('Method not implemented yet')
         raise NotImplemented()
 
     async def delete_namespace(
@@ -537,7 +537,7 @@ class N2VCJujuConnector(N2VCConnector):
         db_dict: dict = None,
         total_timeout: float = None
     ):
-        self.info('Deleting namespace={}'.format(namespace))
+        self.log.info('Deleting namespace={}'.format(namespace))
 
         if not self._authenticated:
             await self._juju_login()
@@ -558,7 +558,7 @@ class N2VCJujuConnector(N2VCConnector):
         else:
             raise N2VCBadArgumentsException(message='only ns_id is permitted to delete yet', bad_args=['namespace'])
 
-        self.info('Namespace {} deleted'.format(namespace))
+        self.log.info('Namespace {} deleted'.format(namespace))
 
     async def delete_execution_environment(
         self,
@@ -566,7 +566,7 @@ class N2VCJujuConnector(N2VCConnector):
         db_dict: dict = None,
         total_timeout: float = None
     ):
-        self.info('Deleting execution environment ee_id={}'.format(ee_id))
+        self.log.info('Deleting execution environment ee_id={}'.format(ee_id))
 
         if not self._authenticated:
             await self._juju_login()
@@ -595,7 +595,7 @@ class N2VCJujuConnector(N2VCConnector):
             raise N2VCException(message='Error deleting execution environment {} (machine {}) : {}'
                                 .format(ee_id, machine_id, e))
 
-        self.info('Execution environment {} deleted'.format(ee_id))
+        self.log.info('Execution environment {} deleted'.format(ee_id))
 
     async def exec_primitive(
             self,
@@ -607,7 +607,7 @@ class N2VCJujuConnector(N2VCConnector):
             total_timeout: float = None
     ) -> str:
 
-        self.info('Executing primitive: {} on ee: {}, params: {}'.format(primitive_name, ee_id, params_dict))
+        self.log.info('Executing primitive: {} on ee: {}, params: {}'.format(primitive_name, ee_id, params_dict))
 
         if not self._authenticated:
             await self._juju_login()
@@ -640,7 +640,7 @@ class N2VCJujuConnector(N2VCConnector):
                     total_timeout=total_timeout
                 )
             except Exception as e:
-                self.error('Error configuring juju application: {}'.format(e))
+                self.log.error('Error configuring juju application: {}'.format(e))
                 raise N2VCExecutionException(
                     message='Error configuring application into ee={} : {}'.format(ee_id, e),
                     primitive_name=primitive_name
@@ -662,14 +662,14 @@ class N2VCJujuConnector(N2VCConnector):
                 else:
                     raise Exception('status is not completed: {}'.format(status))
             except Exception as e:
-                self.error('Error executing primitive {}: {}'.format(primitive_name, e))
+                self.log.error('Error executing primitive {}: {}'.format(primitive_name, e))
                 raise N2VCExecutionException(
                     message='Error executing primitive {} into ee={} : {}'.format(primitive_name, ee_id, e),
                     primitive_name=primitive_name
                 )
 
     async def disconnect(self):
-        self.info('closing juju N2VC...')
+        self.log.info('closing juju N2VC...')
         await self._juju_logout()
 
     """
@@ -692,7 +692,7 @@ class N2VCJujuConnector(N2VCConnector):
             if not the_path[-1] == '.':
                 the_path = the_path + '.'
             update_dict = {the_path + 'ee_id': ee_id}
-            # self.debug('Writing ee_id to database: {}'.format(the_path))
+            # self.log.debug('Writing ee_id to database: {}'.format(the_path))
             self.db.set_one(
                 table=the_table,
                 q_filter=the_filter,
@@ -700,7 +700,7 @@ class N2VCJujuConnector(N2VCConnector):
                 fail_on_empty=True
             )
         except Exception as e:
-            self.error('Error writing ee_id to database: {}'.format(e))
+            self.log.error('Error writing ee_id to database: {}'.format(e))
 
     @staticmethod
     def _build_ee_id(
@@ -781,7 +781,7 @@ class N2VCJujuConnector(N2VCConnector):
             total_timeout: float = None
     ) -> Machine:
 
-        self.debug('creating machine in model: {}, existing machine id: {}'.format(model_name, machine_id))
+        self.log.debug('creating machine in model: {}, existing machine id: {}'.format(model_name, machine_id))
 
         # get juju model and observer (create model if needed)
         model = await self._juju_get_model(model_name=model_name)
@@ -790,15 +790,15 @@ class N2VCJujuConnector(N2VCConnector):
         # find machine id in model
         machine = None
         if machine_id is not None:
-            self.debug('Finding existing machine id {} in model'.format(machine_id))
+            self.log.debug('Finding existing machine id {} in model'.format(machine_id))
             # get juju existing machines in the model
             existing_machines = await model.get_machines()
             if machine_id in existing_machines:
-                self.debug('Machine id {} found in model (reusing it)'.format(machine_id))
+                self.log.debug('Machine id {} found in model (reusing it)'.format(machine_id))
                 machine = model.machines[machine_id]
 
         if machine is None:
-            self.debug('Creating a new machine in juju...')
+            self.log.debug('Creating a new machine in juju...')
             # machine does not exist, create it and wait for it
             machine = await model.add_machine(
                 spec=None,
@@ -832,7 +832,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         else:
 
-            self.debug('Reusing old machine pending')
+            self.log.debug('Reusing old machine pending')
 
             # register machine with observer
             observer.register_machine(machine=machine, db_dict=db_dict)
@@ -843,7 +843,7 @@ class N2VCJujuConnector(N2VCConnector):
                 progress_timeout=progress_timeout,
                 total_timeout=total_timeout)
 
-        self.debug("Machine ready at " + str(machine.dns_name))
+        self.log.debug("Machine ready at " + str(machine.dns_name))
         return machine
 
     async def _juju_provision_machine(
@@ -859,10 +859,10 @@ class N2VCJujuConnector(N2VCConnector):
 
         if not self.api_proxy:
             msg = 'Cannot provision machine: api_proxy is not defined'
-            self.error(msg=msg)
+            self.log.error(msg=msg)
             raise N2VCException(message=msg)
 
-        self.debug('provisioning machine. model: {}, hostname: {}, username: {}'.format(model_name, hostname, username))
+        self.log.debug('provisioning machine. model: {}, hostname: {}, username: {}'.format(model_name, hostname, username))
 
         if not self._authenticated:
             await self._juju_login()
@@ -894,20 +894,20 @@ class N2VCJujuConnector(N2VCConnector):
         connection = model.connection()
 
         # Submit the request.
-        self.debug("Adding machine to model")
+        self.log.debug("Adding machine to model")
         client_facade = client.ClientFacade.from_connection(connection)
         results = await client_facade.AddMachines(params=[params])
         error = results.machines[0].error
         if error:
             msg = "Error adding machine: {}}".format(error.message)
-            self.error(msg=msg)
+            self.log.error(msg=msg)
             raise ValueError(msg)
 
         machine_id = results.machines[0].machine
 
         # Need to run this after AddMachines has been called,
         # as we need the machine_id
-        self.debug("Installing Juju agent into machine {}".format(machine_id))
+        self.log.debug("Installing Juju agent into machine {}".format(machine_id))
         asyncio.ensure_future(provisioner.install_agent(
             connection=connection,
             nonce=params.nonce,
@@ -920,28 +920,28 @@ class N2VCJujuConnector(N2VCConnector):
         for i in range(10):
             machine_list = await model.get_machines()
             if machine_id in machine_list:
-                self.debug('Machine {} found in model!'.format(machine_id))
+                self.log.debug('Machine {} found in model!'.format(machine_id))
                 machine = model.machines.get(machine_id)
                 break
             await asyncio.sleep(2)
 
         if machine is None:
             msg = 'Machine {} not found in model'.format(machine_id)
-            self.error(msg=msg)
+            self.log.error(msg=msg)
             raise Exception(msg)
 
         # register machine with observer
         observer.register_machine(machine=machine, db_dict=db_dict)
 
         # wait for machine creation
-        self.debug('waiting for provision finishes... {}'.format(machine_id))
+        self.log.debug('waiting for provision finishes... {}'.format(machine_id))
         await observer.wait_for_machine(
             machine_id=machine_id,
             progress_timeout=progress_timeout,
             total_timeout=total_timeout
         )
 
-        self.debug("Machine provisioned {}".format(machine_id))
+        self.log.debug("Machine provisioned {}".format(machine_id))
 
         return machine_id
 
@@ -968,9 +968,9 @@ class N2VCJujuConnector(N2VCConnector):
         if application is None:
 
             # application does not exist, create it and wait for it
-            self.debug('deploying application {} to machine {}, model {}'
+            self.log.debug('deploying application {} to machine {}, model {}'
                        .format(application_name, machine_id, model_name))
-            self.debug('charm: {}'.format(charm_path))
+            self.log.debug('charm: {}'.format(charm_path))
             series = 'xenial'
             # series = None
             application = await model.deploy(
@@ -985,12 +985,12 @@ class N2VCJujuConnector(N2VCConnector):
             # register application with observer
             observer.register_application(application=application, db_dict=db_dict)
 
-            self.debug('waiting for application deployed... {}'.format(application.entity_id))
+            self.log.debug('waiting for application deployed... {}'.format(application.entity_id))
             retries = await observer.wait_for_application(
                 application_id=application.entity_id,
                 progress_timeout=progress_timeout,
                 total_timeout=total_timeout)
-            self.debug('application deployed')
+            self.log.debug('application deployed')
 
         else:
 
@@ -998,12 +998,12 @@ class N2VCJujuConnector(N2VCConnector):
             observer.register_application(application=application, db_dict=db_dict)
 
             # application already exists, but not finalised
-            self.debug('application already exists, waiting for deployed...')
+            self.log.debug('application already exists, waiting for deployed...')
             retries = await observer.wait_for_application(
                 application_id=application.entity_id,
                 progress_timeout=progress_timeout,
                 total_timeout=total_timeout)
-            self.debug('application deployed')
+            self.log.debug('application deployed')
 
         return application, retries
 
@@ -1028,7 +1028,7 @@ class N2VCJujuConnector(N2VCConnector):
         if unit is not None:
             actions = await application.get_actions()
             if action_name in actions:
-                self.debug('executing action "{}" using params: {}'.format(action_name, kwargs))
+                self.log.debug('executing action "{}" using params: {}'.format(action_name, kwargs))
                 action = await unit.run_action(action_name, **kwargs)
 
                 # register action with observer
@@ -1038,7 +1038,7 @@ class N2VCJujuConnector(N2VCConnector):
                     action_id=action.entity_id,
                     progress_timeout=progress_timeout,
                     total_timeout=total_timeout)
-                self.debug('action completed with status: {}'.format(action.status))
+                self.log.debug('action completed with status: {}'.format(action.status))
                 output = await model.get_action_output(action_uuid=action.entity_id)
                 status = await model.get_action_status(uuid_or_prefix=action.entity_id)
                 if action.entity_id in status:
@@ -1065,15 +1065,15 @@ class N2VCJujuConnector(N2VCConnector):
         # get the application
         application = await self._juju_get_application(model_name=model_name, application_name=application_name)
 
-        self.debug('configuring the application {} -> {}'.format(application_name, config))
+        self.log.debug('configuring the application {} -> {}'.format(application_name, config))
         res = await application.set_config(config)
-        self.debug('application {} configured. res={}'.format(application_name, res))
+        self.log.debug('application {} configured. res={}'.format(application_name, res))
 
         # Verify the config is set
         new_conf = await application.get_config()
         for key in config:
             value = new_conf[key]['value']
-            self.debug('    {} = {}'.format(key, value))
+            self.log.debug('    {} = {}'.format(key, value))
             if config[key] != value:
                 raise N2VCException(
                     message='key {} is not configured correctly {} != {}'.format(key, config[key], new_conf[key])
@@ -1084,7 +1084,7 @@ class N2VCJujuConnector(N2VCConnector):
         actions = await application.get_actions()
         if 'verify-ssh-credentials' not in actions:
             msg = 'Action verify-ssh-credentials does not exist in application {}'.format(application_name)
-            self.debug(msg=msg)
+            self.log.debug(msg=msg)
             return False
 
         # execute verify-credentials
@@ -1092,7 +1092,7 @@ class N2VCJujuConnector(N2VCConnector):
         retry_timeout = 15.0
         for i in range(num_retries):
             try:
-                self.debug('Executing action verify-ssh-credentials...')
+                self.log.debug('Executing action verify-ssh-credentials...')
                 output, ok = await self._juju_execute_action(
                     model_name=model_name,
                     application_name=application_name,
@@ -1101,13 +1101,13 @@ class N2VCJujuConnector(N2VCConnector):
                     progress_timeout=progress_timeout,
                     total_timeout=total_timeout
                 )
-                self.debug('Result: {}, output: {}'.format(ok, output))
+                self.log.debug('Result: {}, output: {}'.format(ok, output))
                 return True
             except Exception as e:
-                self.debug('Error executing verify-ssh-credentials: {}. Retrying...'.format(e))
+                self.log.debug('Error executing verify-ssh-credentials: {}. Retrying...'.format(e))
                 await asyncio.sleep(retry_timeout)
         else:
-            self.error('Error executing verify-ssh-credentials after {} retries. '.format(num_retries))
+            self.log.error('Error executing verify-ssh-credentials after {} retries. '.format(num_retries))
             return False
 
     async def _juju_get_application(
@@ -1141,7 +1141,7 @@ class N2VCJujuConnector(N2VCConnector):
             return self.juju_models[model_name]
 
         if self._creating_model:
-            self.debug('Another coroutine is creating a model. Wait...')
+            self.log.debug('Another coroutine is creating a model. Wait...')
         while self._creating_model:
             # another coroutine is creating a model, wait
             await asyncio.sleep(0.1)
@@ -1156,7 +1156,7 @@ class N2VCJujuConnector(N2VCConnector):
             model_list = await self.controller.list_models()
 
             if model_name not in model_list:
-                self.info('Model {} does not exist. Creating new model...'.format(model_name))
+                self.log.info('Model {} does not exist. Creating new model...'.format(model_name))
                 config_dict = {'authorized-keys': self.public_key}
                 if self.apt_mirror:
                     config_dict['apt-mirror'] = self.apt_mirror
@@ -1168,11 +1168,11 @@ class N2VCJujuConnector(N2VCConnector):
                     model_name=model_name,
                     config=config_dict
                 )
-                self.info('New model created, name={}'.format(model_name))
+                self.log.info('New model created, name={}'.format(model_name))
             else:
-                self.debug('Model already exists in juju. Getting model {}'.format(model_name))
+                self.log.debug('Model already exists in juju. Getting model {}'.format(model_name))
                 model = await self.controller.get_model(model_name)
-                self.debug('Existing model in juju, name={}'.format(model_name))
+                self.log.debug('Existing model in juju, name={}'.format(model_name))
 
             self.juju_models[model_name] = model
             self.juju_observers[model_name] = JujuModelObserver(n2vc=self, model=model)
@@ -1180,7 +1180,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         except Exception as e:
             msg = 'Cannot get model {}. Exception: {}'.format(model_name, e)
-            self.error(msg)
+            self.log.error(msg)
             raise N2VCException(msg)
         finally:
             self._creating_model = False
@@ -1200,7 +1200,7 @@ class N2VCJujuConnector(N2VCConnector):
         r1 = '{}:{}'.format(application_name_1, relation_1)
         r2 = '{}:{}'.format(application_name_2, relation_2)
 
-        self.debug('adding relation: {} -> {}'.format(r1, r2))
+        self.log.debug('adding relation: {} -> {}'.format(r1, r2))
         try:
             await model.add_relation(relation1=r1, relation2=r2)
         except JujuAPIError as e:
@@ -1219,7 +1219,7 @@ class N2VCJujuConnector(N2VCConnector):
         application_name: str
     ):
 
-        self.debug('Destroying application {} in model {}'.format(application_name, model_name))
+        self.log.debug('Destroying application {} in model {}'.format(application_name, model_name))
 
         # get juju model and observer
         model = await self._juju_get_model(model_name=model_name)
@@ -1228,7 +1228,7 @@ class N2VCJujuConnector(N2VCConnector):
         if application:
             await application.destroy()
         else:
-            self.debug('Application not found: {}'.format(application_name))
+            self.log.debug('Application not found: {}'.format(application_name))
 
     async def _juju_destroy_machine(
         self,
@@ -1237,7 +1237,7 @@ class N2VCJujuConnector(N2VCConnector):
         total_timeout: float = None
     ):
 
-        self.debug('Destroying machine {} in model {}'.format(machine_id, model_name))
+        self.log.debug('Destroying machine {} in model {}'.format(machine_id, model_name))
 
         if total_timeout is None:
             total_timeout = 3600
@@ -1254,12 +1254,12 @@ class N2VCJujuConnector(N2VCConnector):
             # wait for machine removal
             machines = await model.get_machines()
             while machine_id in machines and time.time() < end:
-                self.debug('Waiting for machine {} is destroyed'.format(machine_id))
+                self.log.debug('Waiting for machine {} is destroyed'.format(machine_id))
                 await asyncio.sleep(0.5)
                 machines = await model.get_machines()
-            self.debug('Machine destroyed: {}'.format(machine_id))
+            self.log.debug('Machine destroyed: {}'.format(machine_id))
         else:
-            self.debug('Machine not found: {}'.format(machine_id))
+            self.log.debug('Machine not found: {}'.format(machine_id))
 
     async def _juju_destroy_model(
             self,
@@ -1267,7 +1267,7 @@ class N2VCJujuConnector(N2VCConnector):
             total_timeout: float = None
     ):
 
-        self.debug('Destroying model {}'.format(model_name))
+        self.log.debug('Destroying model {}'.format(model_name))
 
         if total_timeout is None:
             total_timeout = 3600
@@ -1288,19 +1288,19 @@ class N2VCJujuConnector(N2VCConnector):
         self.juju_models[model_name] = None
         self.juju_observers[model_name] = None
 
-        self.debug('destroying model {}...'.format(model_name))
+        self.log.debug('destroying model {}...'.format(model_name))
         await self.controller.destroy_model(uuid)
-        self.debug('model destroy requested {}'.format(model_name))
+        self.log.debug('model destroy requested {}'.format(model_name))
 
         # wait for model is completely destroyed
         end = time.time() + total_timeout
         while time.time() < end:
-            self.debug('Waiting for model is destroyed...')
+            self.log.debug('Waiting for model is destroyed...')
             try:
                 # await self.controller.get_model(uuid)
                 models = await self.controller.list_models()
                 if model_name not in models:
-                    self.debug('The model {} ({}) was destroyed'.format(model_name, uuid))
+                    self.log.debug('The model {} ({}) was destroyed'.format(model_name, uuid))
                     return
             except Exception as e:
                 pass
@@ -1326,7 +1326,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         try:
             self._connecting = True
-            self.info(
+            self.log.info(
                 'connecting to juju controller: {} {}:{} ca_cert: {}'
                 .format(self.url, self.username, self.secret, '\n'+self.ca_cert if self.ca_cert else 'None'))
 
@@ -1340,10 +1340,10 @@ class N2VCJujuConnector(N2VCConnector):
                 cacert=self.ca_cert
             )
             self._authenticated = True
-            self.info('juju controller connected')
+            self.log.info('juju controller connected')
         except Exception as e:
             message = 'Exception connecting to juju: {}'.format(e)
-            self.error(message)
+            self.log.error(message)
             raise N2VCConnectionException(
                 message=message,
                 url=self.url
@@ -1361,10 +1361,10 @@ class N2VCJujuConnector(N2VCConnector):
             try:
                 await self._juju_disconnect_model(model_name)
             except Exception as e:
-                self.error('Error disconnecting model {} : {}'.format(model_name, e))
+                self.log.error('Error disconnecting model {} : {}'.format(model_name, e))
                 # continue with next model...
 
-        self.info("Disconnecting controller")
+        self.log.info("Disconnecting controller")
         try:
             await self.controller.disconnect()
         except Exception as e:
@@ -1372,13 +1372,13 @@ class N2VCJujuConnector(N2VCConnector):
 
         self.controller = None
         self._authenticated = False
-        self.info('disconnected')
+        self.log.info('disconnected')
 
     async def _juju_disconnect_model(
         self,
         model_name: str
     ):
-        self.debug("Disconnecting model {}".format(model_name))
+        self.log.debug("Disconnecting model {}".format(model_name))
         if model_name in self.juju_models:
             await self.juju_models[model_name].disconnect()
             self.juju_models[model_name] = None
@@ -1404,15 +1404,15 @@ class N2VCJujuConnector(N2VCConnector):
 
         pk_path = "{}/.local/share/juju/ssh".format(os.path.expanduser('~'))
         file_path = "{}/juju_id_rsa.pub".format(pk_path)
-        self.debug('writing juju public key to file:\n{}\npublic key: {}'.format(file_path, self.public_key))
+        self.log.debug('writing juju public key to file:\n{}\npublic key: {}'.format(file_path, self.public_key))
         if not os.path.exists(pk_path):
             # create path and write file
             os.makedirs(pk_path)
             with open(file_path, 'w') as f:
-                self.debug('Creating juju public key file: {}'.format(file_path))
+                self.log.debug('Creating juju public key file: {}'.format(file_path))
                 f.write(self.public_key)
         else:
-            self.debug('juju public key file already exists: {}'.format(file_path))
+            self.log.debug('juju public key file already exists: {}'.format(file_path))
 
     @staticmethod
     def _format_model_name(name: str) -> str:
