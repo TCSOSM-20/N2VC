@@ -168,6 +168,7 @@ class N2VCJujuConnector(N2VCConnector):
         else:
             self.apt_mirror = None
 
+        self.cloud = vca_config.get('cloud')
         self.log.debug('Arguments have been checked')
 
         # juju data
@@ -1166,7 +1167,8 @@ class N2VCJujuConnector(N2VCConnector):
 
                 model = await self.controller.add_model(
                     model_name=model_name,
-                    config=config_dict
+                    config=config_dict,
+                    cloud_name=self.cloud,
                 )
                 self.log.info('New model created, name={}'.format(model_name))
             else:
