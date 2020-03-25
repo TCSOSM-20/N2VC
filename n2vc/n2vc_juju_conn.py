@@ -410,6 +410,7 @@ class N2VCJujuConnector(N2VCConnector):
         progress_timeout: float = None,
         total_timeout: float = None,
         config: dict = None,
+        num_units: int = 1,
     ):
 
         self.log.info(
@@ -476,6 +477,7 @@ class N2VCJujuConnector(N2VCConnector):
                 progress_timeout=progress_timeout,
                 total_timeout=total_timeout,
                 config=config,
+                num_units=num_units,
             )
         except Exception as e:
             raise N2VCException(
