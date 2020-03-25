@@ -251,6 +251,7 @@ class Libjuju:
         progress_timeout: float = None,
         total_timeout: float = None,
         series: str = "xenial",
+        wait: bool = True,
     ) -> (Machine, bool):
         """
         Create machine
@@ -260,6 +261,8 @@ class Libjuju:
         :param: db_dict:            Dictionary with data of the DB to write the updates
         :param: progress_timeout:   Maximum time between two updates in the model
         :param: total_timeout:      Timeout for the entity to be active
+        :param: series:             Series of the machine (xenial, bionic, focal, ...)
+        :param: wait:               Wait until machine is ready
 
         :return: (juju.machine.Machine, bool):  Machine object and a boolean saying
                                                 if the machine is new or it already existed
@@ -311,14 +314,15 @@ class Libjuju:
                         machine.entity_id, model_name
                     )
                 )
-                await JujuModelWatcher.wait_for(
-                    model=model,
-                    entity=machine,
-                    progress_timeout=progress_timeout,
-                    total_timeout=total_timeout,
-                    db_dict=db_dict,
-                    n2vc=self.n2vc,
-                )
+                if wait:
+                    await JujuModelWatcher.wait_for(
+                        model=model,
+                        entity=machine,
+                        progress_timeout=progress_timeout,
+                        total_timeout=total_timeout,
+                        db_dict=db_dict,
+                        n2vc=self.n2vc,
+                    )
         finally:
             await self.disconnect_model(model)
             await self.disconnect_controller(controller)
@@ -453,6 +457,7 @@ class Libjuju:
         total_timeout: float = None,
         config: dict = None,
         series: str = None,
+        num_units: int = 1,
     ):
         """Deploy charm
 
@@ -465,6 +470,7 @@ class Libjuju:
         :param: total_timeout:      Timeout for the entity to be active
         :param: config:             Config for the charm
         :param: series:             Series of the charm
+        :param: num_units:          Number of units
 
         :return: (juju.application.Application): Juju application
         """
@@ -508,6 +514,11 @@ class Libjuju:
                         application_name, model_name
                     )
                 )
+                if num_units > 1:
+                    for _ in range(num_units - 1):
+                        m, _ = await self.create_machine(model_name, wait=False)
+                        await application.add_unit(to=m.entity_id)
+
                 await JujuModelWatcher.wait_for(
                     model=model,
                     entity=application,
@@ -712,9 +723,7 @@ class Libjuju:
             await self.disconnect_model(model)
             await self.disconnect_controller(controller)
 
-    async def destroy_model(
-        self, model_name: str, total_timeout: float,
-    ):
+    async def destroy_model(self, model_name: str, total_timeout: float):
         """
         Destroy model
 
