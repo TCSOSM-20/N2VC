@@ -1025,7 +1025,10 @@ class N2VCJujuConnector(N2VCConnector):
 
         application = await self._juju_get_application(model_name=model_name, application_name=application_name)
 
-        unit = application.units[0]
+        unit = None
+        for u in application.units:
+            if await u.is_leader_from_status():
+                unit = u
         if unit is not None:
             actions = await application.get_actions()
             if action_name in actions:
