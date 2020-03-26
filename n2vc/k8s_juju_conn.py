@@ -351,6 +351,8 @@ class K8sJujuConnector(K8sConnector):
                 - <URL_where_to_fetch_juju_bundle>
             """
 
+            previous_workdir = os.getcwd()
+
             bundle = kdu_model
             if kdu_model.startswith("cs:"):
                 bundle = kdu_model
@@ -358,12 +360,11 @@ class K8sJujuConnector(K8sConnector):
                 # Download the file
                 pass
             else:
-                # Local file
+                new_workdir = kdu_model.strip(kdu_model.split("/")[-1])
 
-                # if kdu_model.endswith(".tar.gz") or kdu_model.endswith(".tgz")
-                # Uncompress temporarily
-                # bundle = <uncompressed file>
-                pass
+                os.chdir(new_workdir)
+
+                bundle = "local:{}".format(kdu_model)
 
             if not bundle:
                 # Raise named exception that the bundle could not be found
@@ -396,6 +397,7 @@ class K8sJujuConnector(K8sConnector):
                         self.log.debug("All units active.")
 
                     except concurrent.futures._base.TimeoutError:
+                        os.chdir(previous_workdir)
                         self.log.debug("[install] Timeout exceeded; resetting cluster")
                         await self.reset(cluster_uuid)
                         return False
@@ -404,6 +406,8 @@ class K8sJujuConnector(K8sConnector):
             if model.is_connected():
                 self.log.debug("[install] Disconnecting model")
                 await model.disconnect()
+
+            os.chdir(previous_workdir)
 
             return kdu_instance
         raise Exception("Unable to install")
