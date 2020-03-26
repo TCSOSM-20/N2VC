@@ -169,7 +169,7 @@ class N2VCJujuConnector(N2VCConnector):
             self.apt_mirror = None
 
         self.cloud = vca_config.get('cloud')
-        self.log.debug('Arguments have been checked')
+        # self.log.debug('Arguments have been checked')
 
         # juju data
         self.controller = None         # it will be filled when connect to juju
@@ -440,7 +440,7 @@ class N2VCJujuConnector(N2VCConnector):
                 total_timeout=total_timeout
             )
         except Exception as e:
-            self.log.info('Cannot execute action generate-ssh-key: {}\nContinuing...'.format(e))
+            self.log.info('Skipping exception while executing action generate-ssh-key: {}'.format(e))
 
         # execute action: get-ssh-public-key
         try:
@@ -455,7 +455,7 @@ class N2VCJujuConnector(N2VCConnector):
         except Exception as e:
             msg = 'Cannot execute action get-ssh-public-key: {}\n'.format(e)
             self.log.info(msg)
-            raise e
+            raise N2VCException(msg)
 
         # return public key if exists
         return output["pubkey"] if "pubkey" in output else output
@@ -469,7 +469,7 @@ class N2VCJujuConnector(N2VCConnector):
     ):
 
         self.log.debug('adding new relation between {} and {}, endpoints: {}, {}'
-                   .format(ee_id_1, ee_id_2, endpoint_1, endpoint_2))
+                       .format(ee_id_1, ee_id_2, endpoint_1, endpoint_2))
 
         # check arguments
         if not ee_id_1:
@@ -512,7 +512,7 @@ class N2VCJujuConnector(N2VCConnector):
                 relation_2=endpoint_2
             )
         except Exception as e:
-            message = 'Error adding relation between {} and {}'.format(ee_id_1, ee_id_2)
+            message = 'Error adding relation between {} and {}: {}'.format(ee_id_1, ee_id_2, e)
             self.log.error(message)
             raise N2VCException(message=message)
 
@@ -704,6 +704,8 @@ class N2VCJujuConnector(N2VCConnector):
                 update_dict=update_dict,
                 fail_on_empty=True
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             self.log.error('Error writing ee_id to database: {}'.format(e))
 
@@ -1113,6 +1115,8 @@ class N2VCJujuConnector(N2VCConnector):
                 )
                 self.log.debug('Result: {}, output: {}'.format(ok, output))
                 return True
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 self.log.debug('Error executing verify-ssh-credentials: {}. Retrying...'.format(e))
                 await asyncio.sleep(retry_timeout)
@@ -1292,6 +1296,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         if total_timeout is None:
             total_timeout = 3600
+        end = time.time() + total_timeout
 
         model = await self._juju_get_model(model_name=model_name)
 
@@ -1320,6 +1325,8 @@ class N2VCJujuConnector(N2VCConnector):
         for machine_id in machines:
             try:
                 await self._juju_destroy_machine(model_name=model_name, machine_id=machine_id)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 # ignore exceptions destroying machine
                 pass
@@ -1328,21 +1335,24 @@ class N2VCJujuConnector(N2VCConnector):
 
         self.log.debug('destroying model {}...'.format(model_name))
         await self.controller.destroy_model(uuid)
-        self.log.debug('model destroy requested {}'.format(model_name))
+        # self.log.debug('model destroy requested {}'.format(model_name))
 
         # wait for model is completely destroyed
-        end = time.time() + total_timeout
+        self.log.debug('Waiting for model {} to be destroyed...'.format(model_name))
+        last_exception = ''
         while time.time() < end:
-            self.log.debug('Waiting for model is destroyed...')
             try:
                 # await self.controller.get_model(uuid)
                 models = await self.controller.list_models()
                 if model_name not in models:
                     self.log.debug('The model {} ({}) was destroyed'.format(model_name, uuid))
                     return
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                pass
-            await asyncio.sleep(1.0)
+                last_exception = e
+            await asyncio.sleep(5)
+        raise N2VCException("Timeout waiting for model {} to be destroyed {}".format(model_name, last_exception))
 
     async def _juju_login(self):
         """Connect to juju controller
@@ -1365,8 +1375,8 @@ class N2VCJujuConnector(N2VCConnector):
         try:
             self._connecting = True
             self.log.info(
-                'connecting to juju controller: {} {}:{} ca_cert: {}'
-                .format(self.url, self.username, self.secret, '\n'+self.ca_cert if self.ca_cert else 'None'))
+                'connecting to juju controller: {} {}:{}{}'
+                .format(self.url, self.username, self.secret[:8] + '...', ' with ca_cert' if self.ca_cert else ''))
 
             # Create controller object
             self.controller = Controller(loop=self.loop)

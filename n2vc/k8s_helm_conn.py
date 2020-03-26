@@ -1200,13 +1200,13 @@ class K8sHelmConnector(K8sConnector):
                 return '', -1
 
     def _check_file_exists(self, filename: str, exception_if_not_exists: bool = False):
-        self.log.debug('Checking if file {} exists...'.format(filename))
+        # self.log.debug('Checking if file {} exists...'.format(filename))
         if os.path.exists(filename):
             return True
         else:
             msg = 'File {} does not exist'.format(filename)
             if exception_if_not_exists:
-                self.log.error(msg)
+                # self.log.error(msg)
                 raise K8sException(msg)
 
 
