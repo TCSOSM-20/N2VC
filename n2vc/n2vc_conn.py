@@ -95,7 +95,9 @@ class N2VCConnector(abc.ABC, Loggable):
         if fs is None:
             raise N2VCBadArgumentsException('Argument fs is mandatory', ['fs'])
 
-        self.log.info('url={}, username={}, vca_config={}'.format(url, username, vca_config))
+        self.log.info('url={}, username={}, vca_config={}'.format(
+            url, username, {k: v for k, v in vca_config.items() if k not in ("host", "port", "user", "secret",
+                                                                             "public_key", "ca_cert")}))
 
         # store arguments into self
         self.db = db
