@@ -338,7 +338,8 @@ class N2VCJujuConnector(N2VCConnector):
         artifact_path: str,
         db_dict: dict,
         progress_timeout: float = None,
-        total_timeout: float = None
+        total_timeout: float = None,
+        config: dict = None,
     ):
 
         self.log.info('Installing configuration sw on ee_id: {}, artifact path: {}, db_dict: {}'
@@ -386,7 +387,8 @@ class N2VCJujuConnector(N2VCConnector):
                 machine_id=machine_id,
                 db_dict=db_dict,
                 progress_timeout=progress_timeout,
-                total_timeout=total_timeout
+                total_timeout=total_timeout,
+                config=config
             )
         except Exception as e:
             raise N2VCException(message='Error desploying charm into ee={} : {}'.format(ee_id, e))
@@ -954,7 +956,8 @@ class N2VCJujuConnector(N2VCConnector):
             machine_id: str,
             db_dict: dict,
             progress_timeout: float = None,
-            total_timeout: float = None
+            total_timeout: float = None,
+            config: dict = None
     ) -> (Application, int):
 
         # get juju model and observer
@@ -980,7 +983,8 @@ class N2VCJujuConnector(N2VCConnector):
                 channel='stable',
                 num_units=1,
                 series=series,
-                to=machine_id
+                to=machine_id,
+                config=config
             )
 
             # register application with observer
