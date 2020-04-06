@@ -47,7 +47,7 @@ from n2vc.exceptions import (
 from n2vc.juju_observer import JujuModelObserver
 from n2vc.n2vc_conn import N2VCConnector
 from n2vc.n2vc_conn import obj_to_dict, obj_to_yaml
-from n2vc.provisioner import SSHProvisioner
+from n2vc.provisioner import AsyncSSHProvisioner
 
 
 class N2VCJujuConnector(N2VCConnector):
@@ -1009,7 +1009,7 @@ class N2VCJujuConnector(N2VCConnector):
         # TODO check if machine is already provisioned
         machine_list = await model.get_machines()
 
-        provisioner = SSHProvisioner(
+        provisioner = AsyncSSHProvisioner(
             host=hostname,
             user=username,
             private_key_path=private_key_path,
@@ -1018,7 +1018,7 @@ class N2VCJujuConnector(N2VCConnector):
 
         params = None
         try:
-            params = provisioner.provision_machine()
+            params = await provisioner.provision_machine()
         except Exception as ex:
             msg = "Exception provisioning machine: {}".format(ex)
             self.log.error(msg)
@@ -1335,8 +1335,8 @@ class N2VCJujuConnector(N2VCConnector):
                 if self.apt_mirror:
                     config_dict["apt-mirror"] = self.apt_mirror
                 if not self.enable_os_upgrade:
-                    config_dict['enable-os-refresh-update'] = False
-                    config_dict['enable-os-upgrade'] = False
+                    config_dict["enable-os-refresh-update"] = False
+                    config_dict["enable-os-upgrade"] = False
                 if self.cloud in self.BUILT_IN_CLOUDS:
                     model = await self.controller.add_model(
                         model_name=model_name,
@@ -1348,9 +1348,9 @@ class N2VCJujuConnector(N2VCConnector):
                         model_name=model_name,
                         config=config_dict,
                         cloud_name=self.cloud,
-                        credential_name="admin"
+                        credential_name="admin",
                     )
-                self.log.info('New model created, name={}'.format(model_name))
+                self.log.info("New model created, name={}".format(model_name))
             else:
                 self.log.debug(
                     "Model already exists in juju. Getting model {}".format(model_name)
