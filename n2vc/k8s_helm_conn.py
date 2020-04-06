@@ -656,6 +656,29 @@ class K8sHelmConnector(K8sConnector):
 
         return self._output_to_table(output)
 
+    async def exec_primitive(
+        self,
+        cluster_uuid: str = None,
+        kdu_instance: str = None,
+        primitive_name: str = None,
+        timeout: float = 300,
+        params: dict = None,
+        db_dict: dict = None,
+    ) -> str:
+        """Exec primitive (Juju action)
+
+        :param cluster_uuid str: The UUID of the cluster
+        :param kdu_instance str: The unique name of the KDU instance
+        :param primitive_name: Name of action that will be executed
+        :param timeout: Timeout for action execution
+        :param params: Dictionary of all the parameters needed for the action
+        :db_dict: Dictionary for any additional data
+
+        :return: Returns the output of the action
+        """
+        raise K8sException("KDUs deployed with Helm don't support actions "
+                           "different from rollback, upgrade and status")
+
     async def inspect_kdu(
             self,
             kdu_model: str,
