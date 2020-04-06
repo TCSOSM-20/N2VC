@@ -258,13 +258,14 @@ class JujuModelObserver(ModelObserver):
                 return
 
             # write change in database
-            await self.n2vc.write_app_status_to_db(
-                db_dict=self.applications[application_id].db_dict,
-                status=juju_status_2_osm_status(delta.entity, new.workload_status),
-                detailed_status=new.workload_status_message,
-                vca_status=new.workload_status,
-                entity_type='unit'
-            )
+            if not new.dead:
+                await self.n2vc.write_app_status_to_db(
+                    db_dict=self.applications[application_id].db_dict,
+                    status=juju_status_2_osm_status(delta.entity, new.workload_status),
+                    detailed_status=new.workload_status_message,
+                    vca_status=new.workload_status,
+                    entity_type='unit'
+                )
 
             # set event for this application
             self.applications[application_id].event.set()
