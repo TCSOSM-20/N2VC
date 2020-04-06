@@ -1288,6 +1288,12 @@ class N2VCJujuConnector(N2VCConnector):
             total_timeout = 3600
 
         model = await self._juju_get_model(model_name=model_name)
+
+        if not model:
+            raise N2VCException(
+                message="Model {} does not exist".format(model_name)
+            )
+
         uuid = model.info.uuid
 
         # destroy applications
