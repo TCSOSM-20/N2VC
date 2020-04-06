@@ -1257,16 +1257,22 @@ class N2VCJujuConnector(N2VCConnector):
         if machine_id in machines:
             machine = model.machines[machine_id]
             observer.unregister_machine(machine_id)
-            await machine.destroy(force=True)
-            # max timeout
-            end = time.time() + total_timeout
-            # wait for machine removal
-            machines = await model.get_machines()
-            while machine_id in machines and time.time() < end:
-                self.log.debug('Waiting for machine {} is destroyed'.format(machine_id))
-                await asyncio.sleep(0.5)
+            # TODO: change this by machine.is_manual when this is upstreamed: https://github.com/juju/python-libjuju/pull/396
+            if "instance-id" in machine.safe_data and machine.safe_data[
+                "instance-id"
+            ].startswith("manual:"):
+                self.log.debug("machine.destroy(force=True) started.")
+                await machine.destroy(force=True)
+                self.log.debug("machine.destroy(force=True) passed.")
+                # max timeout
+                end = time.time() + total_timeout
+                # wait for machine removal
                 machines = await model.get_machines()
-            self.log.debug('Machine destroyed: {}'.format(machine_id))
+                while machine_id in machines and time.time() < end:
+                    self.log.debug("Waiting for machine {} is destroyed".format(machine_id))
+                    await asyncio.sleep(0.5)
+                    machines = await model.get_machines()
+                self.log.debug("Machine destroyed: {}".format(machine_id))
         else:
             self.log.debug('Machine not found: {}'.format(machine_id))
 
@@ -1284,6 +1290,19 @@ class N2VCJujuConnector(N2VCConnector):
         model = await self._juju_get_model(model_name=model_name)
         uuid = model.info.uuid
 
+        # destroy applications
+        for application_name in model.applications:
+            try:
+                await self._juju_destroy_application(model_name=model_name, application_name=application_name)
+            except Exception as e:
+                self.log.error(
+                    "Error destroying application {} in model {}: {}".format(
+                        application_name,
+                        model_name,
+                        e
+                    )
+                )
+
         # destroy machines
         machines = await model.get_machines()
         for machine_id in machines:
@@ -1294,8 +1313,6 @@ class N2VCJujuConnector(N2VCConnector):
                 pass
 
         await self._juju_disconnect_model(model_name=model_name)
-        self.juju_models[model_name] = None
-        self.juju_observers[model_name] = None
 
         self.log.debug('destroying model {}...'.format(model_name))
         await self.controller.destroy_model(uuid)
