@@ -162,7 +162,8 @@ class K8sConnector(abc.ABC, Loggable):
             timeout: float = 300,
             params: dict = None,
             db_dict: dict = None,
-            kdu_name: str = None
+            kdu_name: str = None,
+            namespace: str = None
     ):
         """
         Deploys of a new KDU instance. It would implicitly rely on the `install` call to deploy the Chart/Bundle
@@ -183,6 +184,7 @@ class K8sConnector(abc.ABC, Loggable):
                         It contains a dict with {collection: <str>, filter: {},  path: <str>},
                             e.g. {collection: "nsrs", filter: {_id: <nsd-id>, path: "_admin.deployed.K8S.3"}
         :param kdu_name: Name of the KDU instance to be installed
+        :param namespace: K8s namespace to use for the KDU instance
         :return: True if successful
         """
 

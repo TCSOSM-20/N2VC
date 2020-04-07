@@ -306,7 +306,8 @@ class K8sJujuConnector(K8sConnector):
         timeout: float = 300,
         params: dict = None,
         db_dict: dict = None,
-        kdu_name: str = None
+        kdu_name: str = None,
+        namespace: str = None
     ) -> bool:
         """Install a bundle
 
@@ -318,6 +319,7 @@ class K8sJujuConnector(K8sConnector):
                             to finish
         :param params dict: Key-value pairs of instantiation parameters
         :param kdu_name: Name of the KDU instance to be installed
+        :param namespace: K8s namespace to use for the KDU instance
 
         :return: If successful, returns ?
         """
@@ -396,7 +398,7 @@ class K8sJujuConnector(K8sConnector):
                         )
                         self.log.debug("All units active.")
 
-                    except concurrent.futures._base.TimeoutError:
+                    except concurrent.futures._base.TimeoutError:    # TODO use asyncio.TimeoutError
                         os.chdir(previous_workdir)
                         self.log.debug("[install] Timeout exceeded; resetting cluster")
                         await self.reset(cluster_uuid)
