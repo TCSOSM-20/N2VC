@@ -327,7 +327,8 @@ class K8sHelmConnector(K8sConnector):
             timeout: float = 300,
             params: dict = None,
             db_dict: dict = None,
-            kdu_name: str = None
+            kdu_name: str = None,
+            namespace: str = None
     ):
 
         self.log.debug('installing {} in cluster {}'.format(kdu_model, cluster_uuid))
@@ -348,6 +349,10 @@ class K8sHelmConnector(K8sConnector):
         atomic_str = ''
         if atomic:
             atomic_str = '--atomic'
+        # namespace
+        namespace_str = ''
+        if namespace:
+            namespace_str = "--namespace {}".format(namespace)
 
         # version
         version_str = ''
@@ -374,9 +379,11 @@ class K8sHelmConnector(K8sConnector):
                 pass
 
         # helm repo install
-        command = '{} install {} --output yaml --kubeconfig={} --home={} {} {} --name={} {} {}'\
-            .format(self._helm_command, atomic_str, config_filename, helm_dir,
-                    params_str, timeout_str, kdu_instance, kdu_model, version_str)
+        command = '{helm} install {atomic} --output yaml --kubeconfig={config} --home={dir} {params} {timeout} ' \
+                  '--name={name} {ns} {model} {ver}'.format(helm=self._helm_command, atomic=atomic_str,
+                                                            config=config_filename, dir=helm_dir, params=params_str,
+                                                            timeout=timeout_str, name=kdu_instance, ns=namespace_str,
+                                                            model=kdu_model, ver=version_str)
         self.log.debug('installing: {}'.format(command))
 
         if atomic:
