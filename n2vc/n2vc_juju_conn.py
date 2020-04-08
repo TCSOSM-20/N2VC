@@ -32,7 +32,7 @@ from n2vc.n2vc_conn import N2VCConnector
 from n2vc.n2vc_conn import obj_to_dict, obj_to_yaml
 from n2vc.exceptions \
     import N2VCBadArgumentsException, N2VCException, N2VCConnectionException, \
-    N2VCExecutionException, N2VCInvalidCertificate
+    N2VCExecutionException, N2VCInvalidCertificate, N2VCNotFound
 from n2vc.juju_observer import JujuModelObserver
 
 from juju.controller import Controller
@@ -1294,7 +1294,7 @@ class N2VCJujuConnector(N2VCConnector):
         model = await self._juju_get_model(model_name=model_name)
 
         if not model:
-            raise N2VCException(
+            raise N2VCNotFound(
                 message="Model {} does not exist".format(model_name)
             )
 

@@ -125,6 +125,18 @@ class N2VCInvalidCertificate(N2VCException):
         return '<{}> Invalid certificate: {}'.format(type(self), super().__str__())
 
 
+class N2VCNotFound(N2VCException):
+    """
+    Not found
+    """
+
+    def __init__(self, message: str = ''):
+        N2VCException.__init__(self, message=message)
+
+    def __str__(self):
+        return '<{}> Not found: {}'.format(type(self), super().__str__())
+
+
 class K8sException(Exception):
     """
     K8s exception
