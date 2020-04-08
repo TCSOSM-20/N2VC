@@ -556,6 +556,8 @@ class N2VCJujuConnector(N2VCConnector):
                     model_name=ns_id,
                     total_timeout=total_timeout
                 )
+            except N2VCNotFound:
+                raise
             except Exception as e:
                 raise N2VCException(message='Error deleting namespace {} : {}'.format(namespace, e))
         else:
