@@ -124,9 +124,8 @@ class K8sHelmConnector(K8sConnector):
         _kube_dir, helm_dir, config_filename, _cluster_dir = self._get_paths(
             cluster_name=cluster_uuid, create_if_not_exist=True
         )
-        f = open(config_filename, "w")
-        f.write(k8s_creds)
-        f.close()
+        with open(config_filename, "w") as f:
+            f.write(k8s_creds)
 
         # check if tiller pod is up in cluster
         command = "{} --kubeconfig={} --namespace={} get deployments".format(
@@ -136,7 +135,7 @@ class K8sHelmConnector(K8sConnector):
             command=command, raise_exception_on_error=True
         )
 
-        output_table = K8sHelmConnector._output_to_table(output=output)
+        output_table = self._output_to_table(output=output)
 
         # find 'tiller' pod in all pods
         already_initialized = False
@@ -1052,12 +1051,12 @@ class K8sHelmConnector(K8sConnector):
         while True:
             try:
                 await asyncio.sleep(check_every)
-                detailed_status = await self.status_kdu(
-                    cluster_uuid=cluster_uuid, kdu_instance=kdu_instance
+                detailed_status = await self._status_kdu(
+                    cluster_uuid=cluster_uuid, kdu_instance=kdu_instance,
+                    return_text=False
                 )
                 status = detailed_status.get("info").get("Description")
-                self.log.debug("STATUS:\n{}".format(status))
-                self.log.debug("DETAILED STATUS:\n{}".format(detailed_status))
+                self.log.debug('KDU {} STATUS: {}.'.format(kdu_instance, status))
                 # write status to db
                 result = await self.write_app_status_to_db(
                     db_dict=db_dict,
