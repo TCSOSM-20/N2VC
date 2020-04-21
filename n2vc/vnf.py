@@ -16,17 +16,22 @@ import asyncio
 import base64
 import binascii
 import logging
-import os
 import os.path
 import re
 import shlex
 import ssl
 import subprocess
-import sys
-# import time
+
+from juju.client import client
+from juju.controller import Controller
+from juju.errors import JujuAPIError, JujuError
+from juju.model import ModelObserver
+
 import n2vc.exceptions
 from n2vc.provisioner import SSHProvisioner
 
+
+# import time
 # FIXME: this should load the juju inside or modules without having to
 # explicitly install it. Check why it's not working.
 # Load our subtree of the juju library
@@ -34,13 +39,6 @@ from n2vc.provisioner import SSHProvisioner
 # path = os.path.join(path, "modules/libjuju/")
 # if path not in sys.path:
 #     sys.path.insert(1, path)
-
-from juju.client import client
-from juju.controller import Controller
-from juju.model import ModelObserver
-from juju.errors import JujuAPIError, JujuError
-
-
 # We might need this to connect to the websocket securely, but test and verify.
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
@@ -73,14 +71,15 @@ class PrimitiveDoesNotExist(Exception):
 
 
 # Quiet the debug logging
-logging.getLogger('websockets.protocol').setLevel(logging.INFO)
-logging.getLogger('juju.client.connection').setLevel(logging.WARN)
-logging.getLogger('juju.model').setLevel(logging.WARN)
-logging.getLogger('juju.machine').setLevel(logging.WARN)
+logging.getLogger("websockets.protocol").setLevel(logging.INFO)
+logging.getLogger("juju.client.connection").setLevel(logging.WARN)
+logging.getLogger("juju.model").setLevel(logging.WARN)
+logging.getLogger("juju.machine").setLevel(logging.WARN)
 
 
 class VCAMonitor(ModelObserver):
     """Monitor state changes within the Juju Model."""
+
     log = None
 
     def __init__(self, ns_name):
@@ -92,8 +91,8 @@ class VCAMonitor(ModelObserver):
     def AddApplication(self, application_name, callback, *callback_args):
         if application_name not in self.applications:
             self.applications[application_name] = {
-                'callback': callback,
-                'callback_args': callback_args
+                "callback": callback,
+                "callback_args": callback_args,
             }
 
     def RemoveApplication(self, application_name):
@@ -105,36 +104,37 @@ class VCAMonitor(ModelObserver):
 
         if delta.entity == "unit":
             # Ignore change events from other applications
-            if delta.data['application'] not in self.applications.keys():
+            if delta.data["application"] not in self.applications.keys():
                 return
 
             try:
 
-                application_name = delta.data['application']
+                application_name = delta.data["application"]
 
-                callback = self.applications[application_name]['callback']
-                callback_args = \
-                    self.applications[application_name]['callback_args']
+                callback = self.applications[application_name]["callback"]
+                callback_args = self.applications[application_name]["callback_args"]
 
                 if old and new:
                     # Fire off a callback with the application state
                     if callback:
                         callback(
                             self.ns_name,
-                            delta.data['application'],
+                            delta.data["application"],
                             new.workload_status,
                             new.workload_status_message,
-                            *callback_args)
+                            *callback_args,
+                        )
 
                 if old and not new:
                     # This is a charm being removed
                     if callback:
                         callback(
                             self.ns_name,
-                            delta.data['application'],
+                            delta.data["application"],
                             "removed",
                             "",
-                            *callback_args)
+                            *callback_args,
+                        )
             except Exception as e:
                 self.log.debug("[1] notify_callback exception: {}".format(e))
 
@@ -156,6 +156,7 @@ class VCAMonitor(ModelObserver):
 
             pass
 
+
 ########
 # TODO
 #
@@ -164,18 +165,19 @@ class VCAMonitor(ModelObserver):
 
 
 class N2VC:
-    def __init__(self,
-                 log=None,
-                 server='127.0.0.1',
-                 port=17070,
-                 user='admin',
-                 secret=None,
-                 artifacts=None,
-                 loop=None,
-                 juju_public_key=None,
-                 ca_cert=None,
-                 api_proxy=None
-                 ):
+    def __init__(
+        self,
+        log=None,
+        server="127.0.0.1",
+        port=17070,
+        user="admin",
+        secret=None,
+        artifacts=None,
+        loop=None,
+        juju_public_key=None,
+        ca_cert=None,
+        api_proxy=None,
+    ):
         """Initialize N2VC
 
         Initializes the N2VC object, allowing the caller to interoperate with the VCA.
@@ -223,8 +225,8 @@ class N2VC:
 
         # For debugging
         self.refcount = {
-            'controller': 0,
-            'model': 0,
+            "controller": 0,
+            "model": 0,
         }
 
         self.models = {}
@@ -242,7 +244,7 @@ class N2VC:
         if juju_public_key:
             self._create_juju_public_key(juju_public_key)
         else:
-            self.juju_public_key = ''
+            self.juju_public_key = ""
 
         # TODO: Verify ca_cert is valid before using. VCA will crash
         # if the ca_cert isn't formatted correctly.
@@ -255,14 +257,10 @@ class N2VC:
             try:
                 cacert = base64.b64decode(b64string).decode("utf-8")
 
-                cacert = re.sub(
-                    r'\\n',
-                    r'\n',
-                    cacert,
-                )
+                cacert = re.sub(r"\\n", r"\n", cacert,)
             except binascii.Error as e:
                 self.log.debug("Caught binascii.Error: {}".format(e))
-                raise n2vc.exceptions.InvalidCACertificate("Invalid CA Certificate")
+                raise n2vc.exceptions.N2VCInvalidCertificate("Invalid CA Certificate")
 
             return cacert
 
@@ -270,25 +268,24 @@ class N2VC:
         if ca_cert:
             self.ca_cert = base64_to_cacert(ca_cert)
 
-
         # Quiet websocket traffic
-        logging.getLogger('websockets.protocol').setLevel(logging.INFO)
-        logging.getLogger('juju.client.connection').setLevel(logging.WARN)
-        logging.getLogger('model').setLevel(logging.WARN)
+        logging.getLogger("websockets.protocol").setLevel(logging.INFO)
+        logging.getLogger("juju.client.connection").setLevel(logging.WARN)
+        logging.getLogger("model").setLevel(logging.WARN)
         # logging.getLogger('websockets.protocol').setLevel(logging.DEBUG)
 
-        self.log.debug('JujuApi: instantiated')
+        self.log.debug("JujuApi: instantiated")
 
         self.server = server
         self.port = port
 
         self.secret = secret
-        if user.startswith('user-'):
+        if user.startswith("user-"):
             self.user = user
         else:
-            self.user = 'user-{}'.format(user)
+            self.user = "user-{}".format(user)
 
-        self.endpoint = '%s:%d' % (server, int(port))
+        self.endpoint = "%s:%d" % (server, int(port))
 
         self.artifacts = artifacts
 
@@ -307,31 +304,33 @@ class N2VC:
         """
         # Make sure that we have a public key before writing to disk
         if public_key is None or len(public_key) == 0:
-            if 'OSM_VCA_PUBKEY' in os.environ:
-                public_key = os.getenv('OSM_VCA_PUBKEY', '')
+            if "OSM_VCA_PUBKEY" in os.environ:
+                public_key = os.getenv("OSM_VCA_PUBKEY", "")
                 if len(public_key == 0):
                     return
             else:
                 return
 
-        path = "{}/.local/share/juju/ssh".format(
-            os.path.expanduser('~'),
-        )
+        path = "{}/.local/share/juju/ssh".format(os.path.expanduser("~"),)
         if not os.path.exists(path):
             os.makedirs(path)
 
-            with open('{}/juju_id_rsa.pub'.format(path), 'w') as f:
+            with open("{}/juju_id_rsa.pub".format(path), "w") as f:
                 f.write(public_key)
 
-    def notify_callback(self, model_name, application_name, status, message,
-                        callback=None, *callback_args):
+    def notify_callback(
+        self,
+        model_name,
+        application_name,
+        status,
+        message,
+        callback=None,
+        *callback_args
+    ):
         try:
             if callback:
                 callback(
-                    model_name,
-                    application_name,
-                    status, message,
-                    *callback_args,
+                    model_name, application_name, status, message, *callback_args,
                 )
         except Exception as e:
             self.log.error("[0] notify_callback exception {}".format(e))
@@ -342,7 +341,8 @@ class N2VC:
     async def Relate(self, model_name, vnfd):
         """Create a relation between the charm-enabled VDUs in a VNF.
 
-        The Relation mapping has two parts: the id of the vdu owning the endpoint, and the name of the endpoint.
+        The Relation mapping has two parts: the id of the vdu owning the endpoint, and
+        the name of the endpoint.
 
         vdu:
             ...
@@ -351,7 +351,9 @@ class N2VC:
                 -   provides: dataVM:db
                     requires: mgmtVM:app
 
-        This tells N2VC that the charm referred to by the dataVM vdu offers a relation named 'db', and the mgmtVM vdu has an 'app' endpoint that should be connected to a database.
+        This tells N2VC that the charm referred to by the dataVM vdu offers a relation
+        named 'db', and the mgmtVM vdu
+        has an 'app' endpoint that should be connected to a database.
 
         :param str ns_name: The name of the network service.
         :param dict vnfd: The parsed yaml VNF descriptor.
@@ -366,29 +368,27 @@ class N2VC:
         configs = []
         vnf_config = vnfd.get("vnf-configuration")
         if vnf_config:
-            juju = vnf_config['juju']
+            juju = vnf_config["juju"]
             if juju:
                 configs.append(vnf_config)
 
-        for vdu in vnfd['vdu']:
-            vdu_config = vdu.get('vdu-configuration')
+        for vdu in vnfd["vdu"]:
+            vdu_config = vdu.get("vdu-configuration")
             if vdu_config:
-                juju = vdu_config['juju']
+                juju = vdu_config["juju"]
                 if juju:
                     configs.append(vdu_config)
 
         def _get_application_name(name):
             """Get the application name that's mapped to a vnf/vdu."""
             vnf_member_index = 0
-            vnf_name = vnfd['name']
+            vnf_name = vnfd["name"]
 
-            for vdu in vnfd.get('vdu'):
+            for vdu in vnfd.get("vdu"):
                 # Compare the named portion of the relation to the vdu's id
-                if vdu['id'] == name:
+                if vdu["id"] == name:
                     application_name = self.FormatApplicationName(
-                        model_name,
-                        vnf_name,
-                        str(vnf_member_index),
+                        model_name, vnf_name, str(vnf_member_index),
                     )
                     return application_name
                 else:
@@ -398,46 +398,48 @@ class N2VC:
 
         # Loop through relations
         for cfg in configs:
-            if 'juju' in cfg:
-                juju = cfg['juju']
-                if 'vca-relationships' in juju and 'relation' in juju['vca-relationships']:
-                    for rel in juju['vca-relationships']['relation']:
+            if "juju" in cfg:
+                juju = cfg["juju"]
+                if (
+                    "vca-relationships" in juju
+                    and "relation" in juju["vca-relationships"]
+                ):
+                    for rel in juju["vca-relationships"]["relation"]:
                         try:
 
                             # get the application name for the provides
-                            (name, endpoint) = rel['provides'].split(':')
+                            (name, endpoint) = rel["provides"].split(":")
                             application_name = _get_application_name(name)
 
-                            provides = "{}:{}".format(
-                                application_name,
-                                endpoint
-                            )
+                            provides = "{}:{}".format(application_name, endpoint)
 
                             # get the application name for thr requires
-                            (name, endpoint) = rel['requires'].split(':')
+                            (name, endpoint) = rel["requires"].split(":")
                             application_name = _get_application_name(name)
 
-                            requires = "{}:{}".format(
-                                application_name,
-                                endpoint
+                            requires = "{}:{}".format(application_name, endpoint)
+                            self.log.debug(
+                                "Relation: {} <-> {}".format(provides, requires)
                             )
-                            self.log.debug("Relation: {} <-> {}".format(
-                                provides,
-                                requires
-                            ))
                             await self.add_relation(
-                                model_name,
-                                provides,
-                                requires,
+                                model_name, provides, requires,
                             )
                         except Exception as e:
                             self.log.debug("Exception: {}".format(e))
 
         return
 
-    async def DeployCharms(self, model_name, application_name, vnfd,
-                           charm_path, params={}, machine_spec={},
-                           callback=None, *callback_args):
+    async def DeployCharms(
+        self,
+        model_name,
+        application_name,
+        vnfd,
+        charm_path,
+        params={},
+        machine_spec={},
+        callback=None,
+        *callback_args
+    ):
         """Deploy one or more charms associated with a VNF.
 
         Deploy the charm(s) referenced in a VNF Descriptor.
@@ -452,7 +454,8 @@ class N2VC:
             'rw_mgmt_ip': '1.2.3.4',
             # Pass the initial-config-primitives section of the vnf or vdu
             'initial-config-primitives': {...}
-            'user_values': dictionary with the day-1 parameters provided at instantiation time. It will replace values
+            'user_values': dictionary with the day-1 parameters provided at
+                instantiation time. It will replace values
                 inside < >. rw_mgmt_ip will be included here also
           }
         :param dict machine_spec: A dictionary describing the machine to
@@ -499,15 +502,20 @@ class N2VC:
         ########################################
         app = await self.get_application(model, application_name)
         if app:
-            raise JujuApplicationExists("Can't deploy application \"{}\" to model \"{}\" because it already exists.".format(application_name, model_name))
+            raise JujuApplicationExists(
+                (
+                    'Can\'t deploy application "{}" to model '
+                    ' "{}" because it already exists.'
+                ).format(application_name, model_name)
+            )
 
         ################################################################
         # Register this application with the model-level event monitor #
         ################################################################
         if callback:
-            self.log.debug("JujuApi: Registering callback for {}".format(
-                application_name,
-            ))
+            self.log.debug(
+                "JujuApi: Registering callback for {}".format(application_name,)
+            )
             await self.Subscribe(model_name, application_name, callback, *callback_args)
 
         #######################################
@@ -515,15 +523,14 @@ class N2VC:
         #######################################
 
         rw_mgmt_ip = None
-        if 'rw_mgmt_ip' in params:
-            rw_mgmt_ip = params['rw_mgmt_ip']
+        if "rw_mgmt_ip" in params:
+            rw_mgmt_ip = params["rw_mgmt_ip"]
 
-        if 'initial-config-primitive' not in params:
-            params['initial-config-primitive'] = {}
+        if "initial-config-primitive" not in params:
+            params["initial-config-primitive"] = {}
 
         initial_config = self._get_config_from_dict(
-            params['initial-config-primitive'],
-            {'<rw_mgmt_ip>': rw_mgmt_ip}
+            params["initial-config-primitive"], {"<rw_mgmt_ip>": rw_mgmt_ip}
         )
 
         ########################################################
@@ -533,15 +540,16 @@ class N2VC:
         series = "xenial"
 
         if machine_spec.keys():
-            if all(k in machine_spec for k in ['hostname', 'username']):
+            if all(k in machine_spec for k in ["hostname", "username"]):
 
                 # Allow series to be derived from the native charm
                 series = None
 
-                self.log.debug("Provisioning manual machine {}@{}".format(
-                    machine_spec['username'],
-                    machine_spec['hostname'],
-                ))
+                self.log.debug(
+                    "Provisioning manual machine {}@{}".format(
+                        machine_spec["username"], machine_spec["hostname"],
+                    )
+                )
 
                 """Native Charm support
 
@@ -557,15 +565,16 @@ class N2VC:
 
                 to = await self.provision_machine(
                     model_name=model_name,
-                    username=machine_spec['username'],
-                    hostname=machine_spec['hostname'],
+                    username=machine_spec["username"],
+                    hostname=machine_spec["hostname"],
                     private_key_path=self.GetPrivateKeyPath(),
                 )
                 self.log.debug("Provisioned machine id {}".format(to))
 
                 # TODO: If to is none, raise an exception
 
-                # The native charm won't have the sshproxy layer, typically, but LCM uses the config primitive
+                # The native charm won't have the sshproxy layer, typically, but LCM
+                # uses the config primitive
                 # to interpret what the values are. That's a gap to fill.
 
                 """
@@ -583,17 +592,16 @@ class N2VC:
                 # Native charms don't include the ssh-* config values, so strip them
                 # from the initial_config, otherwise the deploy will raise an error.
                 # self.log.debug("Removing ssh-* from initial-config")
-                for k in ['ssh-hostname', 'ssh-username', 'ssh-password']:
+                for k in ["ssh-hostname", "ssh-username", "ssh-password"]:
                     if k in initial_config:
                         self.log.debug("Removing parameter {}".format(k))
                         del initial_config[k]
 
-        self.log.debug("JujuApi: Deploying charm ({}/{}) from {} to {}".format(
-            model_name,
-            application_name,
-            charm_path,
-            to,
-        ))
+        self.log.debug(
+            "JujuApi: Deploying charm ({}/{}) from {} to {}".format(
+                model_name, application_name, charm_path, to,
+            )
+        )
 
         ########################################################
         # Deploy the charm and apply the initial configuration #
@@ -621,7 +629,7 @@ class N2VC:
         except KeyError as ex:
             # We don't currently support relations between NS and VNF/VDU charms
             self.log.warn("[N2VC] Relations not supported: {}".format(ex))
-        except Exception as ex:
+        except Exception:
             # This may happen if not all of the charms needed by the relation
             # are ready. We can safely ignore this, because Relate will be
             # retried when the endpoint of the relation is deployed.
@@ -631,9 +639,7 @@ class N2VC:
         # # Execute initial config primitive(s) #
         # #######################################
         uuids = await self.ExecuteInitialPrimitives(
-            model_name,
-            application_name,
-            params,
+            model_name, application_name, params,
         )
         return uuids
 
@@ -752,7 +758,7 @@ class N2VC:
     #         raise N2VCPrimitiveExecutionFailed(e)
 
     def GetPrivateKeyPath(self):
-        homedir = os.environ['HOME']
+        homedir = os.environ["HOME"]
         sshdir = "{}/.ssh".format(homedir)
         private_key_path = "{}/id_n2vc_rsa".format(sshdir)
         return private_key_path
@@ -768,10 +774,10 @@ class N2VC:
         Juju, after which Juju will communicate with the VM directly via the
         juju agent.
         """
-        public_key = ""
+        # public_key = ""
 
         # Find the path to where we expect our key to live.
-        homedir = os.environ['HOME']
+        homedir = os.environ["HOME"]
         sshdir = "{}/.ssh".format(homedir)
         if not os.path.exists(sshdir):
             os.mkdir(sshdir)
@@ -782,9 +788,7 @@ class N2VC:
         # If we don't have a key generated, generate it.
         if not os.path.exists(private_key_path):
             cmd = "ssh-keygen -t {} -b {} -N '' -f {}".format(
-                "rsa",
-                "4096",
-                private_key_path
+                "rsa", "4096", private_key_path
             )
             subprocess.check_output(shlex.split(cmd))
 
@@ -794,8 +798,9 @@ class N2VC:
 
         return public_key
 
-    async def ExecuteInitialPrimitives(self, model_name, application_name,
-                                       params, callback=None, *callback_args):
+    async def ExecuteInitialPrimitives(
+        self, model_name, application_name, params, callback=None, *callback_args
+    ):
         """Execute multiple primitives.
 
         Execute multiple primitives as declared in initial-config-primitive.
@@ -807,59 +812,71 @@ class N2VC:
         primitives = {}
 
         # Build a sequential list of the primitives to execute
-        for primitive in params['initial-config-primitive']:
+        for primitive in params["initial-config-primitive"]:
             try:
-                if primitive['name'] == 'config':
+                if primitive["name"] == "config":
                     pass
                 else:
-                    seq = primitive['seq']
+                    seq = primitive["seq"]
 
                     params_ = {}
-                    if 'parameter' in primitive:
-                        params_ = primitive['parameter']
+                    if "parameter" in primitive:
+                        params_ = primitive["parameter"]
 
                     user_values = params.get("user_values", {})
-                    if 'rw_mgmt_ip' not in user_values:
-                        user_values['rw_mgmt_ip'] = None
-                        # just for backward compatibility, because it will be provided always by modern version of LCM
+                    if "rw_mgmt_ip" not in user_values:
+                        user_values["rw_mgmt_ip"] = None
+                        # just for backward compatibility, because it will be provided
+                        # always by modern version of LCM
 
                     primitives[seq] = {
-                        'name': primitive['name'],
-                        'parameters': self._map_primitive_parameters(
-                            params_,
-                            user_values
+                        "name": primitive["name"],
+                        "parameters": self._map_primitive_parameters(
+                            params_, user_values
                         ),
                     }
 
                     for primitive in sorted(primitives):
                         try:
-                            # self.log.debug("Queuing action {}".format(primitives[primitive]['name']))
+                            # self.log.debug("Queuing action {}".format(
+                            # primitives[primitive]['name']))
                             uuids.append(
                                 await self.ExecutePrimitive(
                                     model_name,
                                     application_name,
-                                    primitives[primitive]['name'],
+                                    primitives[primitive]["name"],
                                     callback,
                                     callback_args,
-                                    **primitives[primitive]['parameters'],
+                                    **primitives[primitive]["parameters"],
                                 )
                             )
                         except PrimitiveDoesNotExist as e:
-                            self.log.debug("Ignoring exception PrimitiveDoesNotExist: {}".format(e))
+                            self.log.debug(
+                                "Ignoring exception PrimitiveDoesNotExist: {}".format(e)
+                            )
                             pass
                         except Exception as e:
-                            self.log.debug("XXXXXXXXXXXXXXXXXXXXXXXXX Unexpected exception: {}".format(e))
+                            self.log.debug(
+                                (
+                                    "XXXXXXXXXXXXXXXXXXXXXXXXX Unexpected exception: {}"
+                                ).format(e)
+                            )
                             raise e
 
             except N2VCPrimitiveExecutionFailed as e:
-                self.log.debug(
-                    "[N2VC] Exception executing primitive: {}".format(e)
-                )
+                self.log.debug("[N2VC] Exception executing primitive: {}".format(e))
                 raise
         return uuids
 
-    async def ExecutePrimitive(self, model_name, application_name, primitive,
-                               callback, *callback_args, **params):
+    async def ExecutePrimitive(
+        self,
+        model_name,
+        application_name,
+        primitive,
+        callback,
+        *callback_args,
+        **params
+    ):
         """Execute a primitive of a charm for Day 1 or Day 2 configuration.
 
         Execute a primitive defined in the VNF descriptor.
@@ -887,12 +904,10 @@ class N2VC:
 
             model = await self.get_model(model_name)
 
-            if primitive == 'config':
+            if primitive == "config":
                 # config is special, and expecting params to be a dictionary
                 await self.set_config(
-                    model,
-                    application_name,
-                    params['params'],
+                    model, application_name, params["params"],
                 )
             else:
                 app = await self.get_application(model, application_name)
@@ -901,7 +916,9 @@ class N2VC:
                     actions = await app.get_actions()
 
                     if primitive not in actions.keys():
-                        raise PrimitiveDoesNotExist("Primitive {} does not exist".format(primitive))
+                        raise PrimitiveDoesNotExist(
+                            "Primitive {} does not exist".format(primitive)
+                        )
 
                     # Run against the first (and probably only) unit in the app
                     unit = app.units[0]
@@ -913,14 +930,13 @@ class N2VC:
             raise e
         except Exception as e:
             # An unexpected exception was caught
-            self.log.debug(
-                "Caught exception while executing primitive: {}".format(e)
-            )
+            self.log.debug("Caught exception while executing primitive: {}".format(e))
             raise N2VCPrimitiveExecutionFailed(e)
         return uuid
 
-    async def RemoveCharms(self, model_name, application_name, callback=None,
-                           *callback_args):
+    async def RemoveCharms(
+        self, model_name, application_name, callback=None, *callback_args
+    ):
         """Remove a charm from the VCA.
 
         Remove a charm referenced in a VNF Descriptor.
@@ -941,10 +957,9 @@ class N2VC:
                 # Remove this application from event monitoring
                 await self.Unsubscribe(model_name, application_name)
 
-                # self.notify_callback(model_name, application_name, "removing", callback, *callback_args)
-                self.log.debug(
-                    "Removing the application {}".format(application_name)
-                )
+                # self.notify_callback(model_name, application_name, "removing",
+                # callback, *callback_args)
+                self.log.debug("Removing the application {}".format(application_name))
                 await app.remove()
 
                 # await self.disconnect_model(self.monitors[model_name])
@@ -1018,19 +1033,21 @@ class N2VC:
                 try:
                     await model.block_until(
                         lambda: all(
-                            unit.workload_status in ['terminated'] for unit in app.units
+                            unit.workload_status in ["terminated"] for unit in app.units
                         ),
-                        timeout=timeout
+                        timeout=timeout,
                     )
-                except Exception as e:
-                    self.log.debug("Timed out waiting for {} to terminate.".format(application))
+                except Exception:
+                    self.log.debug(
+                        "Timed out waiting for {} to terminate.".format(application)
+                    )
 
             for machine in model.machines:
                 try:
                     self.log.debug("Destroying machine {}".format(machine))
                     await model.machines[machine].destroy(force=True)
                 except JujuAPIError as e:
-                    if 'does not exist' in str(e):
+                    if "does not exist" in str(e):
                         # Our cached model may be stale, because the machine
                         # has already been removed. It's safe to continue.
                         continue
@@ -1085,9 +1102,7 @@ class N2VC:
             the callback method
         """
         self.monitors[ns_name].AddApplication(
-            application_name,
-            callback,
-            *callback_args
+            application_name, callback, *callback_args
         )
 
     async def Unsubscribe(self, ns_name, application_name):
@@ -1098,9 +1113,7 @@ class N2VC:
         :param ns_name str: The name of the Network Service
         :param application_name str: The name of the application
         """
-        self.monitors[ns_name].RemoveApplication(
-            application_name,
-        )
+        self.monitors[ns_name].RemoveApplication(application_name,)
 
     # Non-public methods
     async def add_relation(self, model_name, relation1, relation2):
@@ -1122,9 +1135,9 @@ class N2VC:
             # If one of the applications in the relationship doesn't exist,
             # or the relation has already been added, let the operation fail
             # silently.
-            if 'not found' in e.message:
+            if "not found" in e.message:
                 return
-            if 'already exists' in e.message:
+            if "already exists" in e.message:
                 return
 
             raise e
@@ -1147,42 +1160,45 @@ class N2VC:
         """
         config = {}
         for primitive in config_primitive:
-            if primitive['name'] == 'config':
+            if primitive["name"] == "config":
                 # config = self._map_primitive_parameters()
-                for parameter in primitive['parameter']:
-                    param = str(parameter['name'])
-                    if parameter['value'] == "<rw_mgmt_ip>":
-                        config[param] = str(values[parameter['value']])
+                for parameter in primitive["parameter"]:
+                    param = str(parameter["name"])
+                    if parameter["value"] == "<rw_mgmt_ip>":
+                        config[param] = str(values[parameter["value"]])
                     else:
-                        config[param] = str(parameter['value'])
+                        config[param] = str(parameter["value"])
 
         return config
 
     def _map_primitive_parameters(self, parameters, user_values):
         params = {}
         for parameter in parameters:
-            param = str(parameter['name'])
-            value = parameter.get('value')
+            param = str(parameter["name"])
+            value = parameter.get("value")
 
-            # map parameters inside a < >; e.g. <rw_mgmt_ip>. with the provided user_values.
+            # map parameters inside a < >; e.g. <rw_mgmt_ip>. with the provided user
+            # _values.
             # Must exist at user_values except if there is a default value
             if isinstance(value, str) and value.startswith("<") and value.endswith(">"):
-                if parameter['value'][1:-1] in user_values:
-                    value = user_values[parameter['value'][1:-1]]
-                elif 'default-value' in parameter:
-                    value = parameter['default-value']
+                if parameter["value"][1:-1] in user_values:
+                    value = user_values[parameter["value"][1:-1]]
+                elif "default-value" in parameter:
+                    value = parameter["default-value"]
                 else:
-                    raise KeyError("parameter {}='{}' not supplied ".format(param, value))
+                    raise KeyError(
+                        "parameter {}='{}' not supplied ".format(param, value)
+                    )
 
             # If there's no value, use the default-value (if set)
-            if value is None and 'default-value' in parameter:
-                value = parameter['default-value']
+            if value is None and "default-value" in parameter:
+                value = parameter["default-value"]
 
             # Typecast parameter value, if present
             paramtype = "string"
             try:
-                if 'data-type' in parameter:
-                    paramtype = str(parameter['data-type']).lower()
+                if "data-type" in parameter:
+                    paramtype = str(parameter["data-type"]).lower()
 
                     if paramtype == "integer":
                         value = int(value)
@@ -1194,7 +1210,11 @@ class N2VC:
                     # If there's no data-type, assume the value is a string
                     value = str(value)
             except ValueError:
-                raise ValueError("parameter {}='{}' cannot be converted to type {}".format(param, value, paramtype))
+                raise ValueError(
+                    "parameter {}='{}' cannot be converted to type {}".format(
+                        param, value, paramtype
+                    )
+                )
 
             params[param] = value
         return params
@@ -1203,13 +1223,13 @@ class N2VC:
         """Transform the yang config primitive to dict."""
         config = {}
         for primitive in config_primitive.values():
-            if primitive['name'] == 'config':
-                for parameter in primitive['parameter'].values():
-                    param = str(parameter['name'])
-                    if parameter['value'] == "<rw_mgmt_ip>":
-                        config[param] = str(values[parameter['value']])
+            if primitive["name"] == "config":
+                for parameter in primitive["parameter"].values():
+                    param = str(parameter["name"])
+                    if parameter["value"] == "<rw_mgmt_ip>":
+                        config[param] = str(values[parameter["value"]])
                     else:
-                        config[param] = str(parameter['value'])
+                        config[param] = str(parameter["value"])
 
         return config
 
@@ -1235,7 +1255,7 @@ class N2VC:
             elif not c.isalpha():
                 c = "-"
             appname += c
-        return re.sub('-+', '-', appname.lower())
+        return re.sub("-+", "-", appname.lower())
 
     # def format_application_name(self, nsd_name, vnfr_name, member_vnf_index=0):
     #     """Format the name of the application
@@ -1260,7 +1280,7 @@ class N2VC:
         Model names may only contain lowercase letters, digits and hyphens
         """
 
-        return name.replace('_', '-').lower()
+        return name.replace("_", "-").lower()
 
     async def get_application(self, model, application):
         """Get the deployed application."""
@@ -1290,19 +1310,15 @@ class N2VC:
             if model_name not in models:
                 try:
                     self.models[model_name] = await self.controller.add_model(
-                        model_name,
-                        config={'authorized-keys': self.juju_public_key}
-
+                        model_name, config={"authorized-keys": self.juju_public_key}
                     )
                 except JujuError as e:
                     if "already exists" not in e.message:
                         raise e
             else:
-                self.models[model_name] = await self.controller.get_model(
-                    model_name
-                )
+                self.models[model_name] = await self.controller.get_model(model_name)
 
-            self.refcount['model'] += 1
+            self.refcount["model"] += 1
 
             # Create an observer for this model
             await self.create_model_monitor(model_name)
@@ -1335,9 +1351,7 @@ class N2VC:
         if self.secret:
             self.log.debug(
                 "Connecting to controller... ws://{} as {}/{}".format(
-                    self.endpoint,
-                    self.user,
-                    self.secret,
+                    self.endpoint, self.user, self.secret,
                 )
             )
             try:
@@ -1347,7 +1361,7 @@ class N2VC:
                     password=self.secret,
                     cacert=self.ca_cert,
                 )
-                self.refcount['controller'] += 1
+                self.refcount["controller"] += 1
                 self.authenticated = True
                 self.log.debug("JujuApi: Logged into controller")
             except Exception as ex:
@@ -1364,7 +1378,6 @@ class N2VC:
             self.log.fatal("VCA credentials not configured.")
             self.authenticated = False
 
-
     async def logout(self):
         """Logout of the Juju controller."""
         if not self.authenticated:
@@ -1375,11 +1388,9 @@ class N2VC:
                 await self.disconnect_model(model)
 
             if self.controller:
-                self.log.debug("Disconnecting controller {}".format(
-                    self.controller
-                ))
+                self.log.debug("Disconnecting controller {}".format(self.controller))
                 await self.controller.disconnect()
-                self.refcount['controller'] -= 1
+                self.refcount["controller"] -= 1
                 self.controller = None
 
             self.authenticated = False
@@ -1387,9 +1398,7 @@ class N2VC:
             self.log.debug(self.refcount)
 
         except Exception as e:
-            self.log.fatal(
-                "Fatal error logging out of Juju Controller: {}".format(e)
-            )
+            self.log.fatal("Fatal error logging out of Juju Controller: {}".format(e))
             raise e
         return True
 
@@ -1398,14 +1407,14 @@ class N2VC:
         if model in self.models:
             try:
                 await self.models[model].disconnect()
-                self.refcount['model'] -= 1
+                self.refcount["model"] -= 1
                 self.models[model] = None
             except Exception as e:
                 self.log.debug("Caught exception: {}".format(e))
 
-    async def provision_machine(self, model_name: str,
-                                hostname: str, username: str,
-                                private_key_path: str) -> int:
+    async def provision_machine(
+        self, model_name: str, hostname: str, username: str, private_key_path: str
+    ) -> int:
         """Provision a machine.
 
         This executes the SSH provisioner, which will log in to a machine via
@@ -1414,8 +1423,10 @@ class N2VC:
         :param model_name str: The name of the model
         :param hostname str: The IP or hostname of the target VM
         :param user str: The username to login to
-        :param private_key_path str: The path to the private key that's been injected to the VM via cloud-init
-        :return machine_id int: Returns the id of the machine or None if provisioning fails
+        :param private_key_path str: The path to the private key that's been injected
+            to the VM via cloud-init
+        :return machine_id int: Returns the id of the machine or None if provisioning
+            fails
         """
         if not self.authenticated:
             await self.login()
@@ -1423,11 +1434,11 @@ class N2VC:
         machine_id = None
 
         if self.api_proxy:
-            self.log.debug("Instantiating SSH Provisioner for {}@{} ({})".format(
-                username,
-                hostname,
-                private_key_path
-            ))
+            self.log.debug(
+                "Instantiating SSH Provisioner for {}@{} ({})".format(
+                    username, hostname, private_key_path
+                )
+            )
             provisioner = SSHProvisioner(
                 host=hostname,
                 user=username,
@@ -1443,7 +1454,7 @@ class N2VC:
                 return None
 
             if params:
-                params.jobs = ['JobHostUnits']
+                params.jobs = ["JobHostUnits"]
 
                 model = await self.get_model(model_name)
 
@@ -1463,10 +1474,7 @@ class N2VC:
                 # as we need the machine_id
                 self.log.debug("Installing Juju agent")
                 await provisioner.install_agent(
-                    connection,
-                    params.nonce,
-                    machine_id,
-                    self.api_proxy,
+                    connection, params.nonce, machine_id, self.api_proxy,
                 )
         else:
             self.log.debug("Missing API Proxy")
@@ -1495,11 +1503,11 @@ class N2VC:
         if not self.authenticated:
             await self.login()
 
-        m = await self.get_model()
-        try:
-            m.remove_relation(a, b)
-        finally:
-            await m.disconnect()
+        # m = await self.get_model()
+        # try:
+        #    m.remove_relation(a, b)
+        # finally:
+        #    await m.disconnect()
 
     async def resolve_error(self, model_name, application=None):
         """Resolve units in error state."""
@@ -1511,25 +1519,17 @@ class N2VC:
         app = await self.get_application(model, application)
         if app:
             self.log.debug(
-                "JujuApi: Resolving errors for application {}".format(
-                    application,
-                )
+                "JujuApi: Resolving errors for application {}".format(application,)
             )
 
-            for unit in app.units:
+            for _ in app.units:
                 app.resolved(retry=True)
 
     async def run_action(self, model_name, application, action_name, **params):
         """Execute an action and return an Action object."""
         if not self.authenticated:
             await self.login()
-        result = {
-            'status': '',
-            'action': {
-                'tag': None,
-                'results': None,
-            }
-        }
+        result = {"status": "", "action": {"tag": None, "results": None}}
 
         model = await self.get_model(model_name)
 
@@ -1541,8 +1541,7 @@ class N2VC:
 
             self.log.debug(
                 "JujuApi: Running Action {} against Application {}".format(
-                    action_name,
-                    application,
+                    action_name, application,
                 )
             )
 
@@ -1551,9 +1550,9 @@ class N2VC:
             # Wait for the action to complete
             await action.wait()
 
-            result['status'] = action.status
-            result['action']['tag'] = action.data['id']
-            result['action']['results'] = action.results
+            result["status"] = action.status
+            result["action"]["tag"] = action.data["id"]
+            result["action"]["results"] = action.results
 
         return result
 
@@ -1564,16 +1563,20 @@ class N2VC:
 
         app = await self.get_application(model_name, application)
         if app:
-            self.log.debug("JujuApi: Setting config for Application {}".format(
-                application,
-            ))
+            self.log.debug(
+                "JujuApi: Setting config for Application {}".format(application,)
+            )
             await app.set_config(config)
 
             # Verify the config is set
             newconf = await app.get_config()
             for key in config:
-                if config[key] != newconf[key]['value']:
-                    self.log.debug("JujuApi: Config not set! Key {} Value {} doesn't match {}".format(key, config[key], newconf[key]))
+                if config[key] != newconf[key]["value"]:
+                    self.log.debug(
+                        (
+                            "JujuApi: Config not set! Key {} Value {} doesn't match {}"
+                        ).format(key, config[key], newconf[key])
+                    )
 
     # async def set_parameter(self, parameter, value, application=None):
     #     """Set a config parameter for a service."""
@@ -1588,10 +1591,9 @@ class N2VC:
     #     return await self.apply_config(
     #         {parameter: value},
     #         application=application,
-        # )
+    # )
 
-    async def wait_for_application(self, model_name, application_name,
-                                   timeout=300):
+    async def wait_for_application(self, model_name, application_name, timeout=300):
         """Wait for an application to become active."""
         if not self.authenticated:
             await self.login()
@@ -1603,15 +1605,15 @@ class N2VC:
         if app:
             self.log.debug(
                 "JujuApi: Waiting {} seconds for Application {}".format(
-                    timeout,
-                    application_name,
+                    timeout, application_name,
                 )
             )
 
             await model.block_until(
                 lambda: all(
-                    unit.agent_status == 'idle' and unit.workload_status in
-                    ['active', 'unknown'] for unit in app.units
+                    unit.agent_status == "idle"
+                    and unit.workload_status in ["active", "unknown"]
+                    for unit in app.units
                 ),
-                timeout=timeout
+                timeout=timeout,
             )

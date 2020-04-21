@@ -13,4 +13,4 @@
 #     limitations under the License.
 
 #!/bin/sh
-#tox
+tox

@@ -12,21 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-__pycache__
-*.pyc
-.tox/
-tests/charms/builds
-tests/charms/deps
-dist/
-.cache/
-.local/
-N2VC.egg-info/
-.coverage
-cover
-coverage.xml
-.tox
-nosetests.xml
-.cache
-.vscode/
-.project
-.pydevproject
+flake8<3.0
+mock
+requests-mock
+coverage==4.5.3
