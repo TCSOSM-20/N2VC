@@ -21,24 +21,18 @@
 ##
 
 
-import logging
 import asyncio
-import time
-import inspect
 import datetime
-import threading    # only for logging purposes (not for using threads)
+import inspect
+import logging
+import threading  # only for logging purposes (not for using threads)
+import time
 
 
 class Loggable:
+    def __init__(self, log, log_to_console: bool = False, prefix: str = ""):
 
-    def __init__(
-            self,
-            log,
-            log_to_console: bool = False,
-            prefix: str = ''
-    ):
-
-        self._last_log_time = None   # used for time increment in logging
+        self._last_log_time = None  # used for time increment in logging
         self._log_to_console = log_to_console
         self._prefix = prefix
         if log is not None:
@@ -47,21 +41,21 @@ class Loggable:
             self.log = logging.getLogger(__name__)
 
     def debug(self, msg: str):
-        self._log_msg(log_level='DEBUG', msg=msg)
+        self._log_msg(log_level="DEBUG", msg=msg)
 
     def info(self, msg: str):
-        self._log_msg(log_level='INFO', msg=msg)
+        self._log_msg(log_level="INFO", msg=msg)
 
     def warning(self, msg: str):
-        self._log_msg(log_level='WARNING', msg=msg)
+        self._log_msg(log_level="WARNING", msg=msg)
 
     def error(self, msg: str):
-        self._log_msg(log_level='ERROR', msg=msg)
+        self._log_msg(log_level="ERROR", msg=msg)
 
     def critical(self, msg: str):
-        self._log_msg(log_level='CRITICAL', msg=msg)
+        self._log_msg(log_level="CRITICAL", msg=msg)
 
-    ##################################################################################################
+    ####################################################################################
 
     def _log_msg(self, log_level: str, msg: str):
         """Generic log method"""
@@ -72,41 +66,41 @@ class Loggable:
             level=3,
             include_path=False,
             include_thread=False,
-            include_coroutine=True
+            include_coroutine=True,
         )
         if self._log_to_console:
             print(msg)
         else:
             if self.log is not None:
-                if log_level == 'DEBUG':
+                if log_level == "DEBUG":
                     self.log.debug(msg)
-                elif log_level == 'INFO':
+                elif log_level == "INFO":
                     self.log.info(msg)
-                elif log_level == 'WARNING':
+                elif log_level == "WARNING":
                     self.log.warning(msg)
-                elif log_level == 'ERROR':
+                elif log_level == "ERROR":
                     self.log.error(msg)
-                elif log_level == 'CRITICAL':
+                elif log_level == "CRITICAL":
                     self.log.critical(msg)
 
     def _format_log(
-            self,
-            log_level: str,
-            msg: str = '',
-            obj: object = None,
-            level: int = None,
-            include_path: bool = False,
-            include_thread: bool = False,
-            include_coroutine: bool = True
+        self,
+        log_level: str,
+        msg: str = "",
+        obj: object = None,
+        level: int = None,
+        include_path: bool = False,
+        include_thread: bool = False,
+        include_coroutine: bool = True,
     ) -> str:
 
         # time increment from last log
         now = time.perf_counter()
         if self._last_log_time is None:
-            time_str = ' (+0.000)'
+            time_str = " (+0.000)"
         else:
             diff = round(now - self._last_log_time, 3)
-            time_str = ' (+{})'.format(diff)
+            time_str = " (+{})".format(diff)
         self._last_log_time = now
 
         if level is None:
@@ -119,49 +113,69 @@ class Loggable:
         lineno = fi.lineno
         # filename without path
         if not include_path:
-            i = filename.rfind('/')
+            i = filename.rfind("/")
             if i > 0:
-                filename = filename[i+1:]
+                filename = filename[i + 1 :]
 
         # datetime
-        dt = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         dt = dt + time_str
         # dt = time_str       # logger already shows datetime
 
         # current thread
         if include_thread:
-            thread_name = 'th:{}'.format(threading.current_thread().getName())
+            thread_name = "th:{}".format(threading.current_thread().getName())
         else:
-            thread_name = ''
+            thread_name = ""
 
         # current coroutine
 
-        coroutine_id = ''
+        coroutine_id = ""
         if include_coroutine:
             try:
                 if asyncio.Task.current_task() is not None:
+
                     def print_cor_name(c):
                         import inspect
+
                         try:
                             for m in inspect.getmembers(c):
-                                if m[0] == '__name__':
+                                if m[0] == "__name__":
                                     return m[1]
                         except Exception:
                             pass
+
                     coro = asyncio.Task.current_task()._coro
-                    coroutine_id = 'coro-{} {}()'.format(hex(id(coro))[2:], print_cor_name(coro))
+                    coroutine_id = "coro-{} {}()".format(
+                        hex(id(coro))[2:], print_cor_name(coro)
+                    )
             except Exception:
-                coroutine_id = ''
+                coroutine_id = ""
 
         # classname
         if obj is not None:
             obj_type = obj.__class__.__name__  # type: str
-            log_msg = \
-                '{} {} {} {} {}::{}.{}():{}\n{}'\
-                .format(self._prefix, dt, thread_name, coroutine_id, filename, obj_type, func, lineno, str(msg))
+            log_msg = "{} {} {} {} {}::{}.{}():{}\n{}".format(
+                self._prefix,
+                dt,
+                thread_name,
+                coroutine_id,
+                filename,
+                obj_type,
+                func,
+                lineno,
+                str(msg),
+            )
         else:
-            log_msg = \
-                '{} {} {} {} {}::{}():{}\n{}'\
-                .format(self._prefix, dt, thread_name, coroutine_id, filename, func, lineno, str(msg))
+            log_msg = "{} {} {} {} {}::{}():{}\n{}".format(
+                self._prefix,
+                dt,
+                thread_name,
+                coroutine_id,
+                filename,
+                func,
+                lineno,
+                str(msg),
+            )
 
         return log_msg

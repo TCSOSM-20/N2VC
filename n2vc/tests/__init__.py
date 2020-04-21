@@ -11,22 +11,3 @@
 #     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
-
-__pycache__
-*.pyc
-.tox/
-tests/charms/builds
-tests/charms/deps
-dist/
-.cache/
-.local/
-N2VC.egg-info/
-.coverage
-cover
-coverage.xml
-.tox
-nosetests.xml
-.cache
-.vscode/
-.project
-.pydevproject

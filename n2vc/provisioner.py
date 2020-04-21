@@ -15,15 +15,15 @@ import logging
 import os
 import re
 import shlex
+from subprocess import CalledProcessError
 import tempfile
 import time
 import uuid
-from subprocess import CalledProcessError
-
-import paramiko
-import n2vc.exceptions
 
 from juju.client import client
+import n2vc.exceptions
+import paramiko
+
 
 arches = [
     [re.compile(r"amd64|x86_64"), "amd64"],
@@ -32,7 +32,6 @@ arches = [
     [re.compile(r"aarch64"), "arm64"],
     [re.compile(r"ppc64|ppc64el|ppc64le"), "ppc64el"],
     [re.compile(r"s390x?"), "s390x"],
-
 ]
 
 
@@ -79,6 +78,7 @@ iptables -t nat -A OUTPUT -p tcp -d {} -j DNAT --to-destination {}
 netfilter-persistent save
 """
 
+
 class SSHProvisioner:
     """Provision a manually created machine via SSH."""
 
@@ -121,7 +121,7 @@ class SSHProvisioner:
 
         # Read the private key into a paramiko.RSAKey
         if os.path.exists(private_key_path):
-            with open(private_key_path, 'r') as f:
+            with open(private_key_path, "r") as f:
                 pkey = paramiko.RSAKey.from_private_key(f)
 
         #######################################################################
@@ -155,7 +155,7 @@ class SSHProvisioner:
                 )
                 break
             except paramiko.ssh_exception.SSHException as e:
-                if 'Error reading SSH protocol banner' == str(e):
+                if "Error reading SSH protocol banner" == str(e):
                     # Once more, with feeling
                     ssh.connect(host, port=22, username=user, pkey=pkey)
                 else:
@@ -163,8 +163,10 @@ class SSHProvisioner:
                     self.log.debug("Unhandled exception caught: {}".format(e))
                     raise e
             except Exception as e:
-                if 'Unable to connect to port' in str(e):
-                    self.log.debug("Waiting for VM to boot, sleeping {} seconds".format(delay))
+                if "Unable to connect to port" in str(e):
+                    self.log.debug(
+                        "Waiting for VM to boot, sleeping {} seconds".format(delay)
+                    )
                     if attempts > retry:
                         raise e
                     else:
@@ -194,17 +196,16 @@ class SSHProvisioner:
         if type(cmd) is not list:
             cmd = [cmd]
 
-        cmds = ' '.join(cmd)
-        stdin, stdout, stderr = ssh.exec_command(cmds, get_pty=pty)
+        cmds = " ".join(cmd)
+        _, stdout, stderr = ssh.exec_command(cmds, get_pty=pty)
         retcode = stdout.channel.recv_exit_status()
 
         if retcode > 0:
             output = stderr.read().strip()
-            raise CalledProcessError(returncode=retcode, cmd=cmd,
-                                     output=output)
+            raise CalledProcessError(returncode=retcode, cmd=cmd, output=output)
         return (
-            stdout.read().decode('utf-8').strip(),
-            stderr.read().decode('utf-8').strip()
+            stdout.read().decode("utf-8").strip(),
+            stderr.read().decode("utf-8").strip(),
         )
 
     def _init_ubuntu_user(self):
@@ -218,7 +219,7 @@ class SSHProvisioner:
         try:
             # Run w/o allocating a pty, so we fail if sudo prompts for a passwd
             ssh = self._get_ssh_client()
-            stdout, stderr = self._run_command(ssh, "sudo -n true", pty=False)
+            self._run_command(ssh, "sudo -n true", pty=False)
         except paramiko.ssh_exception.AuthenticationException:
             raise n2vc.exceptions.AuthenticationFailed(self.user)
         except paramiko.ssh_exception.NoValidConnectionsError:
@@ -228,7 +229,6 @@ class SSHProvisioner:
                 ssh.close()
 
         # Infer the public key
-        public_key = None
         public_key_path = "{}.pub".format(self.private_key_path)
 
         if not os.path.exists(public_key_path):
@@ -245,9 +245,7 @@ class SSHProvisioner:
             ssh = self._get_ssh_client()
 
             self._run_command(
-                ssh,
-                ["sudo", "/bin/bash -c " + shlex.quote(script)],
-                pty=True
+                ssh, ["sudo", "/bin/bash -c " + shlex.quote(script)], pty=True
             )
         except paramiko.ssh_exception.AuthenticationException as e:
             raise e
@@ -264,32 +262,30 @@ class SSHProvisioner:
         """
 
         info = {
-            'series': '',
-            'arch': '',
-            'cpu-cores': '',
-            'mem': '',
+            "series": "",
+            "arch": "",
+            "cpu-cores": "",
+            "mem": "",
         }
 
-        stdout, stderr = self._run_command(
-            ssh,
-            ["sudo", "/bin/bash -c " + shlex.quote(DETECTION_SCRIPT)],
-            pty=True,
+        stdout, _ = self._run_command(
+            ssh, ["sudo", "/bin/bash -c " + shlex.quote(DETECTION_SCRIPT)], pty=True,
         )
 
         lines = stdout.split("\n")
 
         # Remove extraneous line if DNS resolution of hostname famils
         # i.e. sudo: unable to resolve host test-1-mgmtvm-1: Connection timed out
-        if 'unable to resolve host' in lines[0]:
+        if "unable to resolve host" in lines[0]:
             lines = lines[1:]
 
-        info['series'] = lines[0].strip()
-        info['arch'] = normalize_arch(lines[1].strip())
+        info["series"] = lines[0].strip()
+        info["arch"] = normalize_arch(lines[1].strip())
 
-        memKb = re.split(r'\s+', lines[2])[1]
+        memKb = re.split(r"\s+", lines[2])[1]
 
         # Convert megabytes -> kilobytes
-        info['mem'] = round(int(memKb) / 1024)
+        info["mem"] = round(int(memKb) / 1024)
 
         # Detect available CPUs
         recorded = {}
@@ -302,7 +298,7 @@ class SSHProvisioner:
                 cores = line.split(":")[1].strip()
 
                 if physical_id not in recorded.keys():
-                    info['cpu-cores'] += cores
+                    info["cpu-cores"] += cores
                     recorded[physical_id] = True
 
         return info
@@ -321,22 +317,19 @@ class SSHProvisioner:
                 ssh = self._get_ssh_client()
 
                 hw = self._detect_hardware_and_os(ssh)
-                params.series = hw['series']
+                params.series = hw["series"]
                 params.instance_id = "manual:{}".format(self.host)
                 params.nonce = "manual:{}:{}".format(
-                    self.host,
-                    str(uuid.uuid4()),  # a nop for Juju w/manual machines
+                    self.host, str(uuid.uuid4()),  # a nop for Juju w/manual machines
                 )
                 params.hardware_characteristics = {
-                    'arch': hw['arch'],
-                    'mem': int(hw['mem']),
-                    'cpu-cores': int(hw['cpu-cores']),
+                    "arch": hw["arch"],
+                    "mem": int(hw["mem"]),
+                    "cpu-cores": int(hw["cpu-cores"]),
                 }
-                params.addresses = [{
-                    'value': self.host,
-                    'type': 'ipv4',
-                    'scope': 'public',
-                }]
+                params.addresses = [
+                    {"value": self.host, "type": "ipv4", "scope": "public"}
+                ]
 
             except paramiko.ssh_exception.AuthenticationException as e:
                 raise e
@@ -378,7 +371,7 @@ class SSHProvisioner:
             - 127.0.0.1:17070
             - '[::1]:17070'
         """
-        m = re.search('apiaddresses:\n- (\d+\.\d+\.\d+\.\d+):17070', results.script)
+        m = re.search(r"apiaddresses:\n- (\d+\.\d+\.\d+\.\d+):17070", results.script)
         apiaddress = m.group(1)
 
         """Add IP Table rule
@@ -405,19 +398,17 @@ class SSHProvisioner:
                 self._run_configure_script(script)
                 break
             except Exception as e:
-                    self.log.debug("Waiting for dpkg, sleeping {} seconds".format(delay))
-                    if attempts > retry:
-                        raise e
-                    else:
-                        time.sleep(delay)
-                        # Slowly back off the retry
-                        delay += 15
+                self.log.debug("Waiting for dpkg, sleeping {} seconds".format(delay))
+                if attempts > retry:
+                    raise e
+                else:
+                    time.sleep(delay)
+                    # Slowly back off the retry
+                    delay += 15
 
         # self.log.debug("Running configure script")
         self._run_configure_script(results.script)
         # self.log.debug("Configure script finished")
-
-
 
     def _run_configure_script(self, script: str):
         """Run the script to install the Juju agent on the target machine.
@@ -427,25 +418,21 @@ class SSHProvisioner:
             if the upload fails
         """
         _, tmpFile = tempfile.mkstemp()
-        with open(tmpFile, 'w') as f:
+        with open(tmpFile, "w") as f:
             f.write(script)
         try:
             # get ssh client
-            ssh = self._get_ssh_client(
-                user="ubuntu",
-            )
+            ssh = self._get_ssh_client(user="ubuntu",)
 
             # copy the local copy of the script to the remote machine
             sftp = paramiko.SFTPClient.from_transport(ssh.get_transport())
             sftp.put(
-                tmpFile,
-                tmpFile,
+                tmpFile, tmpFile,
             )
 
             # run the provisioning script
-            stdout, stderr = self._run_command(
-                ssh,
-                "sudo /bin/bash {}".format(tmpFile),
+            self._run_command(
+                ssh, "sudo /bin/bash {}".format(tmpFile),
             )
 
         except paramiko.ssh_exception.AuthenticationException as e:
