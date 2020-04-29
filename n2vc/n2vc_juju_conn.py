@@ -54,6 +54,8 @@ class N2VCJujuConnector(N2VCConnector):
     ##################################################################################################
     """
 
+    BUILT_IN_CLOUDS = ["localhost", "microk8s"]
+
     def __init__(
         self,
         db: object,
@@ -1177,12 +1179,19 @@ class N2VCJujuConnector(N2VCConnector):
                 if not self.enable_os_upgrade:
                     config_dict['enable-os-refresh-update'] = False
                     config_dict['enable-os-upgrade'] = False
-
-                model = await self.controller.add_model(
-                    model_name=model_name,
-                    config=config_dict,
-                    cloud_name=self.cloud,
-                )
+                if self.cloud in self.BUILT_IN_CLOUDS:
+                    model = await self.controller.add_model(
+                        model_name=model_name,
+                        config=config_dict,
+                        cloud_name=self.cloud,
+                    )
+                else:
+                    model = await self.controller.add_model(
+                        model_name=model_name,
+                        config=config_dict,
+                        cloud_name=self.cloud,
+                        credential_name="admin"
+                    )
                 self.log.info('New model created, name={}'.format(model_name))
             else:
                 self.log.debug('Model already exists in juju. Getting model {}'.format(model_name))
