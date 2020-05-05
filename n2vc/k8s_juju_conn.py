@@ -16,12 +16,13 @@ import asyncio
 import concurrent
 import os
 import uuid
+import yaml
 
 import juju
 from juju.controller import Controller
+from juju.model import Model
 from n2vc.exceptions import K8sException
 from n2vc.k8s_conn import K8sConnector
-import yaml
 
 from .exceptions import MethodNotImplemented
 
@@ -728,7 +729,7 @@ class K8sJujuConnector(K8sConnector):
 
         return True
 
-    async def add_model(self, model_name: str, cluster_uuid: str,) -> juju.model.Model:
+    async def add_model(self, model_name: str, cluster_uuid: str,) -> Model:
         """Adds a model to the controller
 
         Adds a new model to the Juju controller
@@ -850,7 +851,7 @@ class K8sJujuConnector(K8sConnector):
                 "Unable to locate configuration for cluster {}".format(cluster_uuid)
             )
 
-    async def get_model(self, model_name: str, cluster_uuid: str,) -> juju.model.Model:
+    async def get_model(self, model_name: str, cluster_uuid: str,) -> Model:
         """Get a model from the Juju Controller.
 
         Note: Model objects returned must call disconnected() before it goes
