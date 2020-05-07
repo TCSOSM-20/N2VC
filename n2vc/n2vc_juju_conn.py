@@ -1348,7 +1348,7 @@ class N2VCJujuConnector(N2VCConnector):
                         model_name=model_name,
                         config=config_dict,
                         cloud_name=self.cloud,
-                        credential_name="admin",
+                        credential_name=self.cloud,
                     )
                 self.log.info("New model created, name={}".format(model_name))
             else:
