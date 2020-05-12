@@ -184,9 +184,9 @@ class JujuModelObserver(ModelObserver):
 
         # default values for no timeout
         if total_timeout is None:
-            total_timeout = 100000
+            total_timeout = 3600
         if progress_timeout is None:
-            progress_timeout = 100000
+            progress_timeout = 3600
 
         # max end time
         now = time.time()
@@ -215,7 +215,7 @@ class JujuModelObserver(ModelObserver):
             if await _wait_for_event_or_timeout(entity.event, next_timeout):
                 entity.event.clear()
             else:
-                message = "Progress timeout {} seconds, {}}: {}".format(
+                message = "Progress timeout {} seconds, {}: {}".format(
                     progress_timeout, entity.entity_type, entity.entity_id
                 )
                 self.n2vc.debug(message)
