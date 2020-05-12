@@ -243,8 +243,8 @@ class AsyncSSHProvisioner:
             params.series = hw["series"]
             params.instance_id = "manual:{}".format(self.host)
             params.nonce = "manual:{}:{}".format(
-                self.host, str(uuid.uuid4()),  # a nop for Juju w/manual machines
-            )
+                self.host, str(uuid.uuid4()),
+            )  # a nop for Juju w/manual machines
             params.hardware_characteristics = {
                 "arch": hw["arch"],
                 "mem": int(hw["mem"]),
@@ -586,8 +586,8 @@ class SSHProvisioner:
                 params.series = hw["series"]
                 params.instance_id = "manual:{}".format(self.host)
                 params.nonce = "manual:{}:{}".format(
-                    self.host, str(uuid.uuid4()),  # a nop for Juju w/manual machines
-                )
+                    self.host, str(uuid.uuid4()),
+                )  # a nop for Juju w/manual machines
                 params.hardware_characteristics = {
                     "arch": hw["arch"],
                     "mem": int(hw["mem"]),

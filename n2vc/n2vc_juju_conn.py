@@ -1034,7 +1034,7 @@ class N2VCJujuConnector(N2VCConnector):
         results = await client_facade.AddMachines(params=[params])
         error = results.machines[0].error
         if error:
-            msg = "Error adding machine: {}}".format(error.message)
+            msg = "Error adding machine: {}".format(error.message)
             self.log.error(msg=msg)
             raise ValueError(msg)
 
