@@ -17,8 +17,24 @@ class JujuCharmNotFound(Exception):
     """The Charm can't be found or is not readable."""
 
 
+class JujuControllerFailedConnecting(Exception):
+    """Failed connecting to juju controller."""
+
+
+class JujuModelAlreadyExists(Exception):
+    """The model already exists."""
+
+
 class JujuApplicationExists(Exception):
     """The Application already exists."""
+
+
+class JujuApplicationNotFound(Exception):
+    """The Application cannot be found."""
+
+
+class JujuMachineNotFound(Exception):
+    """The machine cannot be found."""
 
 
 class N2VCPrimitiveExecutionFailed(Exception):
@@ -157,3 +173,7 @@ class K8sException(Exception):
 
     def __repr__(self):
         return self._message
+
+
+class EntityInvalidException(Exception):
+    """Entity is not valid, the type does not match any EntityType."""

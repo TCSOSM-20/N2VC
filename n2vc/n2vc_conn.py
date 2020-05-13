@@ -23,7 +23,6 @@
 
 import abc
 import asyncio
-from enum import Enum
 from http import HTTPStatus
 import os
 import shlex
@@ -35,14 +34,7 @@ from osm_common.dbmongo import DbException
 import yaml
 
 from n2vc.loggable import Loggable
-
-
-class N2VCDeploymentStatus(Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    UNKNOWN = "unknown"
+from n2vc.utils import EntityType, JujuStatusToOSM, N2VCDeploymentStatus
 
 
 class N2VCConnector(abc.ABC, Loggable):
@@ -468,7 +460,14 @@ class N2VCConnector(abc.ABC, Loggable):
             else:
                 self.log.info("Exception writing status to database: {}".format(e))
 
+    def osm_status(self, entity_type: EntityType, status: str) -> N2VCDeploymentStatus:
+        if status not in JujuStatusToOSM[entity_type]:
+            self.log.warning("Status {} not found in JujuStatusToOSM.")
+            return N2VCDeploymentStatus.UNKNOWN
+        return JujuStatusToOSM[entity_type][status]
 
+
+# DEPRECATED
 def juju_status_2_osm_status(statustype: str, status: str) -> N2VCDeploymentStatus:
     if statustype == "application" or statustype == "unit":
         if status in ["waiting", "maintenance"]:

@@ -17,3 +17,4 @@ mock
 requests-mock
 coverage==4.5.3
 asynctest
+juju==2.8.1
