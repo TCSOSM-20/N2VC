@@ -745,9 +745,12 @@ class K8sJujuConnector(K8sConnector):
             "Adding model '{}' to cluster_uuid '{}'".format(model_name, cluster_uuid)
         )
         try:
-            model = await self.controller.add_model(
-                model_name, config={"authorized-keys": self.juju_public_key}
-            )
+            if self.juju_public_key is not None:
+                model = await self.controller.add_model(
+                    model_name, config={"authorized-keys": self.juju_public_key}
+                )
+            else:
+                model = await self.controller.add_model(model_name)
         except Exception as ex:
             self.log.debug(ex)
             self.log.debug("Caught exception: {}".format(ex))
