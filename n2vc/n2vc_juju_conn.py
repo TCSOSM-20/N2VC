@@ -1113,14 +1113,14 @@ class N2VCJujuConnector(N2VCConnector):
                 )
             )
             self.log.debug("charm: {}".format(charm_path))
-            series = "xenial"
+            machine = model.machines[machine_id]
             # series = None
             application = await model.deploy(
                 entity_url=charm_path,
                 application_name=application_name,
                 channel="stable",
                 num_units=1,
-                series=series,
+                series=machine.series,
                 to=machine_id,
                 config=config,
             )
