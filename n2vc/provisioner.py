@@ -72,8 +72,8 @@ fi
 
 IPTABLES_SCRIPT = """#!/bin/bash
 set -e
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -yqq iptables-persistent
+[ -v `which netfilter-persistent` ] && apt update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -yqq iptables-persistent
 iptables -t nat -A OUTPUT -p tcp -d {} -j DNAT --to-destination {}
 netfilter-persistent save
 """
