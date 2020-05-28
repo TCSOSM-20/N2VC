@@ -335,8 +335,10 @@ class K8sJujuConnector(K8sConnector):
                     in the package>
                 - <URL_where_to_fetch_juju_bundle>
             """
-
-            previous_workdir = os.getcwd()
+            try:
+                previous_workdir = os.getcwd()
+            except FileNotFoundError:
+                previous_workdir = "/app/storage"
 
             bundle = kdu_model
             if kdu_model.startswith("cs:"):
