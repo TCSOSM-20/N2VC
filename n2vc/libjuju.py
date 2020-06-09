@@ -944,3 +944,20 @@ class Libjuju:
             finally:
                 await self.disconnect_controller(controller)
             await asyncio.sleep(interval)
+
+    async def list_models(self, contains: str = None) -> [str]:
+        """List models with certain names
+
+        :param: contains:   String that is contained in model name
+
+        :retur: [models] Returns list of model names
+        """
+
+        controller = await self.get_controller()
+        try:
+            models = await controller.list_models()
+            if contains:
+                models = [model for model in models if contains in model]
+            return models
+        finally:
+            await self.disconnect_controller(controller)
