@@ -43,6 +43,7 @@ from n2vc.exceptions import (
     N2VCInvalidCertificate,
     N2VCNotFound,
     MethodNotImplemented,
+    JujuK8sProxycharmNotSupported,
 )
 from n2vc.juju_observer import JujuModelObserver
 from n2vc.n2vc_conn import N2VCConnector
@@ -185,8 +186,11 @@ class N2VCJujuConnector(N2VCConnector):
         else:
             self.apt_mirror = None
 
-        self.cloud = vca_config.get("cloud")
-        # self.log.debug('Arguments have been checked')
+        self.cloud = vca_config.get('cloud')
+        self.k8s_cloud = None
+        if "k8s_cloud" in vca_config:
+            self.k8s_cloud = vca_config.get("k8s_cloud")
+        self.log.debug('Arguments have been checked')
 
         # juju data
         self.controller = None  # it will be filled when connect to juju
@@ -233,7 +237,11 @@ class N2VCJujuConnector(N2VCConnector):
             self.log.error(msg)
             raise N2VCBadArgumentsException(msg, ["namespace"])
 
-        status = await self.libjuju.get_model_status(model_name)
+        status = {}
+        models = await self.libjuju.list_models(contains=ns_id)
+
+        for m in models:
+            status[m] = self.libjuju.get_model_status(m)
 
         if yaml_format:
             return obj_to_yaml(status)
@@ -486,6 +494,91 @@ class N2VCJujuConnector(N2VCConnector):
 
         self.log.info("Configuration sw installed")
 
+    async def install_k8s_proxy_charm(
+        self,
+        charm_name: str,
+        namespace: str,
+        artifact_path: str,
+        db_dict: dict,
+        progress_timeout: float = None,
+        total_timeout: float = None,
+        config: dict = None,
+    ) -> str:
+        """
+        Install a k8s proxy charm
+
+        :param charm_name: Name of the charm being deployed
+        :param namespace: collection of all the uuids related to the charm.
+        :param str artifact_path: where to locate the artifacts (parent folder) using
+            the self.fs
+            the final artifact path will be a combination of this artifact_path and
+            additional string from the config_dict (e.g. charm name)
+        :param dict db_dict: where to write into database when the status changes.
+                        It contains a dict with
+                            {collection: <str>, filter: {},  path: <str>},
+                            e.g. {collection: "nsrs", filter:
+                                {_id: <nsd-id>, path: "_admin.deployed.VCA.3"}
+        :param float progress_timeout:
+        :param float total_timeout:
+        :param config: Dictionary with additional configuration
+
+        :returns ee_id: execution environment id.
+        """
+        self.log.info('Installing k8s proxy charm: {}, artifact path: {}, db_dict: {}'
+                      .format(charm_name, artifact_path, db_dict))
+
+        if not self.k8s_cloud:
+            raise JujuK8sProxycharmNotSupported("There is not k8s_cloud available")
+
+        if artifact_path is None or len(artifact_path) == 0:
+            raise N2VCBadArgumentsException(
+                message="artifact_path is mandatory", bad_args=["artifact_path"]
+            )
+        if db_dict is None:
+            raise N2VCBadArgumentsException(message='db_dict is mandatory', bad_args=['db_dict'])
+
+        # remove // in charm path
+        while artifact_path.find('//') >= 0:
+            artifact_path = artifact_path.replace('//', '/')
+
+        # check charm path
+        if not self.fs.file_exists(artifact_path, mode="dir"):
+            msg = 'artifact path does not exist: {}'.format(artifact_path)
+            raise N2VCBadArgumentsException(message=msg, bad_args=['artifact_path'])
+
+        if artifact_path.startswith('/'):
+            full_path = self.fs.path + artifact_path
+        else:
+            full_path = self.fs.path + '/' + artifact_path
+
+        _, ns_id, _, _, _ = self._get_namespace_components(namespace=namespace)
+        model_name = '{}-k8s'.format(ns_id)
+
+        await self.libjuju.add_model(model_name, self.k8s_cloud)
+        application_name = self._get_application_name(namespace)
+
+        try:
+            await self.libjuju.deploy_charm(
+                model_name=model_name,
+                application_name=application_name,
+                path=full_path,
+                machine_id=None,
+                db_dict=db_dict,
+                progress_timeout=progress_timeout,
+                total_timeout=total_timeout,
+                config=config
+            )
+        except Exception as e:
+            raise N2VCException(message='Error deploying charm: {}'.format(e))
+
+        self.log.info('K8s proxy charm installed')
+        ee_id = N2VCJujuConnector._build_ee_id(
+            model_name=model_name,
+            application_name=application_name,
+            machine_id="k8s",
+        )
+        return ee_id
+
     async def get_ee_ssh_public__key(
         self,
         ee_id: str,
@@ -653,13 +746,11 @@ class N2VCJujuConnector(N2VCConnector):
         )
         if ns_id is not None:
             try:
-                if not await self.libjuju.model_exists(ns_id):
-                    raise N2VCNotFound(message="Model {} does not exist".format(ns_id))
-                await self.libjuju.destroy_model(
-                    model_name=ns_id, total_timeout=total_timeout
-                )
-            except N2VCNotFound:
-                raise
+                models = await self.libjuju.list_models(contains=ns_id)
+                for model in models:
+                    await self.libjuju.destroy_model(
+                        model_name=model, total_timeout=total_timeout
+                    )
             except Exception as e:
                 raise N2VCException(
                     message="Error deleting namespace {} : {}".format(namespace, e)
@@ -785,17 +876,18 @@ class N2VCJujuConnector(N2VCConnector):
                                 progress_timeout=progress_timeout,
                                 total_timeout=total_timeout,
                             )
+
+                            if ok == "failed":
+                                self.log.debug(
+                                    "Error executing verify-ssh-credentials: {}. Retrying..."
+                                )
+                                await asyncio.sleep(retry_timeout)
+
+                                continue
                             self.log.debug("Result: {}, output: {}".format(ok, output))
                             break
                         except asyncio.CancelledError:
                             raise
-                        except Exception as e:
-                            self.log.debug(
-                                "Error executing verify-ssh-credentials: {}. Retrying...".format(
-                                    e
-                                )
-                            )
-                            await asyncio.sleep(retry_timeout)
                     else:
                         self.log.error(
                             "Error executing verify-ssh-credentials after {} retries. ".format(
@@ -1370,7 +1462,6 @@ class N2VCJujuConnector(N2VCConnector):
 
             # get juju model names from juju
             model_list = await self.controller.list_models()
-
             if model_name not in model_list:
                 self.log.info(
                     "Model {} does not exist. Creating new model...".format(model_name)

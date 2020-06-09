@@ -37,6 +37,10 @@ class JujuMachineNotFound(Exception):
     """The machine cannot be found."""
 
 
+class JujuK8sProxycharmNotSupported(Exception):
+    """K8s Proxy Charms not supported in this installation."""
+
+
 class N2VCPrimitiveExecutionFailed(Exception):
     """Something failed while attempting to execute a primitive."""
 

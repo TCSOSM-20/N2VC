@@ -246,6 +246,38 @@ class N2VCConnector(abc.ABC, Loggable):
         """
 
     @abc.abstractmethod
+    async def install_k8s_proxy_charm(
+        self,
+        charm_name: str,
+        namespace: str,
+        artifact_path: str,
+        db_dict: dict,
+        progress_timeout: float = None,
+        total_timeout: float = None,
+        config: dict = None,
+    ) -> str:
+        """
+        Install a k8s proxy charm
+
+        :param charm_name: Name of the charm being deployed
+        :param namespace: collection of all the uuids related to the charm.
+        :param str artifact_path: where to locate the artifacts (parent folder) using
+            the self.fs
+            the final artifact path will be a combination of this artifact_path and
+            additional string from the config_dict (e.g. charm name)
+        :param dict db_dict: where to write into database when the status changes.
+                        It contains a dict with
+                            {collection: <str>, filter: {},  path: <str>},
+                            e.g. {collection: "nsrs", filter:
+                                {_id: <nsd-id>, path: "_admin.deployed.VCA.3"}
+        :param float progress_timeout:
+        :param float total_timeout:
+        :param config: Dictionary with additional configuration
+
+        :returns ee_id: execution environment id.
+        """
+
+    @abc.abstractmethod
     async def get_ee_ssh_public__key(
         self,
         ee_id: str,
