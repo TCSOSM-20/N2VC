@@ -462,7 +462,7 @@ class N2VCConnector(abc.ABC, Loggable):
 
     def osm_status(self, entity_type: EntityType, status: str) -> N2VCDeploymentStatus:
         if status not in JujuStatusToOSM[entity_type]:
-            self.log.warning("Status {} not found in JujuStatusToOSM.")
+            self.log.warning("Status {} not found in JujuStatusToOSM.".format(status))
             return N2VCDeploymentStatus.UNKNOWN
         return JujuStatusToOSM[entity_type][status]
 

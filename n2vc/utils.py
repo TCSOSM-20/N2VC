@@ -92,6 +92,7 @@ JujuStatusToOSM = {
         "active": N2VCDeploymentStatus.COMPLETED,
     },
     EntityType.ACTION: {
+        "pending": N2VCDeploymentStatus.PENDING,
         "running": N2VCDeploymentStatus.RUNNING,
         "completed": N2VCDeploymentStatus.COMPLETED,
     },
@@ -103,3 +104,11 @@ JujuStatusToOSM = {
         "active": N2VCDeploymentStatus.COMPLETED,
     },
 }
+
+DB_DATA = Dict(
+    {
+        "api_endpoints": Dict(
+            {"table": "admin", "filter": {"_id": "juju"}, "key": "api_endpoints"}
+        )
+    }
+)

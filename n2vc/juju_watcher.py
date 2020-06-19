@@ -20,7 +20,7 @@ from n2vc.exceptions import EntityInvalidException
 from n2vc.n2vc_conn import N2VCConnector
 from juju.model import ModelEntity, Model
 from juju.client.overrides import Delta
-
+from websockets.exceptions import ConnectionClosed
 import logging
 
 logger = logging.getLogger("__main__")
@@ -130,48 +130,54 @@ class JujuModelWatcher:
         # Get time when it should timeout
         timeout_end = time.time() + timeout
 
-        while True:
-            change = await allwatcher.Next()
-            for delta in change.deltas:
-                write = False
-                delta_entity = None
+        try:
+            while True:
+                change = await allwatcher.Next()
+                for delta in change.deltas:
+                    write = False
+                    delta_entity = None
 
-                # Get delta EntityType
-                delta_entity = EntityType.get_entity_from_delta(delta.entity)
+                    # Get delta EntityType
+                    delta_entity = EntityType.get_entity_from_delta(delta.entity)
 
-                if delta_entity in entity_types:
-                    # Get entity id
-                    if entity_type == EntityType.APPLICATION:
-                        id = (
-                            delta.data["application"]
-                            if delta_entity == EntityType.UNIT
-                            else delta.data["name"]
+                    if delta_entity in entity_types:
+                        # Get entity id
+                        if entity_type == EntityType.APPLICATION:
+                            id = (
+                                delta.data["application"]
+                                if delta_entity == EntityType.UNIT
+                                else delta.data["name"]
+                            )
+                        else:
+                            id = delta.data["id"]
+
+                        # Write if the entity id match
+                        write = True if id == entity_id else False
+
+                        # Update timeout
+                        timeout_end = time.time() + timeout
+                        (status, status_message, vca_status) = JujuModelWatcher.get_status(
+                            delta, entity_type=delta_entity
                         )
-                    else:
-                        id = delta.data["id"]
 
-                    # Write if the entity id match
-                    write = True if id == entity_id else False
-
-                    # Update timeout
-                    timeout_end = time.time() + timeout
-                    (status, status_message, vca_status) = JujuModelWatcher.get_status(
-                        delta, entity_type=delta_entity
-                    )
-
-                    if write and n2vc is not None and db_dict:
-                        # Write status to DB
-                        status = n2vc.osm_status(delta_entity, status)
-                        await n2vc.write_app_status_to_db(
-                            db_dict=db_dict,
-                            status=status,
-                            detailed_status=status_message,
-                            vca_status=vca_status,
-                            entity_type=delta_entity.value.__name__.lower(),
-                        )
-            # Check if timeout
-            if time.time() > timeout_end:
-                raise asyncio.TimeoutError()
+                        if write and n2vc is not None and db_dict:
+                            # Write status to DB
+                            status = n2vc.osm_status(delta_entity, status)
+                            await n2vc.write_app_status_to_db(
+                                db_dict=db_dict,
+                                status=status,
+                                detailed_status=status_message,
+                                vca_status=vca_status,
+                                entity_type=delta_entity.value.__name__.lower(),
+                            )
+                # Check if timeout
+                if time.time() > timeout_end:
+                    raise asyncio.TimeoutError()
+        except ConnectionClosed:
+            pass
+            # This is expected to happen when the
+            # entity reaches its final state, because
+            # the model connection is closed afterwards
 
     @staticmethod
     def get_status(delta: Delta, entity_type: EntityType) -> (str, str, str):
