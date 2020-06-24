@@ -175,6 +175,7 @@ class N2VCJujuConnector(N2VCConnector):
             self.warning(
                 "api_proxy is not configured. Support for native charms is disabled"
             )
+            self.api_proxy = None
 
         if "enable_os_upgrade" in vca_config:
             self.enable_os_upgrade = vca_config["enable_os_upgrade"]
