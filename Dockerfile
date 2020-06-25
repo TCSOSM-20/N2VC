@@ -12,8 +12,8 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
 RUN apt-get update && apt-get -y install git make python python3 \
-    libcurl4-gnutls-dev libgnutls-dev tox python3-dev \
-    debhelper python3-setuptools python-all python3-all apt-utils
+    libcurl4-gnutls-dev libgnutls28-dev tox python3-dev python3-pip \
+    debhelper python3-setuptools python-all python3-all apt-utils 
