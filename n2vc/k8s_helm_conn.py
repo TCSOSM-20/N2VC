@@ -833,6 +833,67 @@ class K8sHelmConnector(K8sConnector):
             return_text=True,
         )
 
+    async def get_services(self,
+                           cluster_uuid: str,
+                           kdu_instance: str,
+                           namespace: str) -> list:
+
+        self.log.debug(
+            "get_services: cluster_uuid: {}, kdu_instance: {}".format(
+                cluster_uuid, kdu_instance
+            )
+        )
+
+        status = await self._status_kdu(
+            cluster_uuid, kdu_instance, return_text=False
+        )
+
+        service_names = self._parse_helm_status_service_info(status)
+        service_list = []
+        for service in service_names:
+            service = await self.get_service(cluster_uuid, service, namespace)
+            service_list.append(service)
+
+        return service_list
+
+    async def get_service(self,
+                          cluster_uuid: str,
+                          service_name: str,
+                          namespace: str) -> object:
+
+        self.log.debug(
+            "get service, service_name: {}, namespace: {}, cluster_uuid: {}".format(
+                service_name, namespace, cluster_uuid)
+        )
+
+        # get paths
+        _kube_dir, helm_dir, config_filename, _cluster_dir = self._get_paths(
+            cluster_name=cluster_uuid, create_if_not_exist=True
+        )
+
+        command = "{} --kubeconfig={} --namespace={} get service {} -o=yaml".format(
+            self.kubectl_command, config_filename, namespace, service_name
+        )
+
+        output, _rc = await self._local_async_exec(
+            command=command, raise_exception_on_error=True
+        )
+
+        data = yaml.load(output, Loader=yaml.SafeLoader)
+
+        service = {
+            "name": service_name,
+            "type": self._get_deep(data, ("spec", "type")),
+            "ports": self._get_deep(data, ("spec", "ports")),
+            "cluster_ip": self._get_deep(data, ("spec", "clusterIP"))
+        }
+        if service["type"] == "LoadBalancer":
+            ip_map_list = self._get_deep(data, ("status", "loadBalancer", "ingress"))
+            ip_list = [elem["ip"] for elem in ip_map_list]
+            service["external_ip"] = ip_list
+
+        return service
+
     async def synchronize_repos(self, cluster_uuid: str):
 
         _, cluster_id = self._get_namespace_cluster_id(cluster_uuid)
@@ -1097,7 +1158,7 @@ class K8sHelmConnector(K8sConnector):
                 self.log.debug("Task cancelled")
                 return
             except Exception as e:
-                self.log.debug("_store_status exception: {}".format(str(e)))
+                self.log.debug("_store_status exception: {}".format(str(e)), exc_info=True)
                 pass
             finally:
                 if run_once:
@@ -1151,6 +1212,37 @@ class K8sHelmConnector(K8sConnector):
                 pass
 
         return ready
+
+    def _parse_helm_status_service_info(self, status):
+
+        # extract info.status.resources-> str
+        # format:
+        #       ==> v1/Deployment
+        #       NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+        #       halting-horse-mongodb   0/1     1            0           0s
+        #       halting-petit-mongodb   1/1     1            0           0s
+        # blank line
+        resources = K8sHelmConnector._get_deep(status, ("info", "status", "resources"))
+
+        service_list = []
+        first_line_skipped = service_found = False
+        for line in resources:
+            if not service_found:
+                if len(line) >= 2 and line[0] == "==>" and line[1] == "v1/Service":
+                    service_found = True
+                    continue
+            else:
+                if len(line) >= 2 and line[0] == "==>":
+                    service_found = first_line_skipped = False
+                    continue
+                if not line:
+                    continue
+                if not first_line_skipped:
+                    first_line_skipped = True
+                    continue
+                service_list.append(line[0])
+
+        return service_list
 
     @staticmethod
     def _get_deep(dictionary: dict, members: tuple):

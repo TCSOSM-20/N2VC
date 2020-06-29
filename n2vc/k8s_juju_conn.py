@@ -691,6 +691,24 @@ class K8sJujuConnector(K8sConnector):
 
         return status
 
+    async def get_services(self,
+                           cluster_uuid: str,
+                           kdu_instance: str,
+                           namespace: str = None) -> list:
+        """
+        Returns empty list as currently add_repo is not implemented
+        """
+        raise MethodNotImplemented
+
+    async def get_service(self,
+                          cluster_uuid: str,
+                          service_name: str,
+                          namespace: str = None) -> object:
+        """
+        Returns empty list as currently add_repo is not implemented
+        """
+        raise MethodNotImplemented
+
     # Private methods
     async def add_k8s(self, cloud_name: str, credentials: str,) -> bool:
         """Add a k8s cloud to Juju
