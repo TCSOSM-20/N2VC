@@ -312,6 +312,48 @@ class K8sConnector(abc.ABC, Loggable):
 
         """
 
+    @abc.abstractmethod
+    async def get_services(self,
+                           cluster_uuid: str,
+                           kdu_instance: str,
+                           namespace: str) -> list:
+        """
+        Returns a list of services defined for the specified kdu instance.
+
+        :param cluster_uuid: UUID of a K8s cluster known by OSM
+        :param kdu_instance: unique name for the KDU instance
+        :param namespace: K8s namespace used by the KDU instance
+        :return: If successful, it will return a list of services, Each service
+        can have the following data:
+        - `name` of the service
+        - `type` type of service in the k8 cluster
+        - `ports` List of ports offered by the service, for each port includes at least
+        name, port, protocol
+        - `cluster_ip` Internal ip to be used inside k8s cluster
+        - `external_ip` List of external ips (in case they are available)
+        """
+
+    @abc.abstractmethod
+    async def get_service(self,
+                          cluster_uuid: str,
+                          service_name: str,
+                          namespace: str = None) -> object:
+        """
+        Obtains the data of the specified service in the k8cluster.
+
+        :param cluster_uuid: UUID of a K8s cluster known by OSM
+        :param service_name: name of the K8s service in the specified namespace
+        :param namespace: K8s namespace used by the KDU instance
+        :return: If successful, it will return a list of services, Each service can have
+        the following data:
+        - `name` of the service
+        - `type` type of service in the k8 cluster
+        - `ports` List of ports offered by the service, for each port includes at least
+        name, port, protocol
+        - `cluster_ip` Internal ip to be used inside k8s cluster
+        - `external_ip` List of external ips (in case they are available)
+        """
+
     """
     ####################################################################################
     ################################### P R I V A T E ##################################
