@@ -577,6 +577,9 @@ class N2VCJujuConnector(N2VCConnector):
             application_name=application_name,
             machine_id="k8s",
         )
+
+        self._write_ee_id_db(db_dict=db_dict, ee_id=ee_id)
+
         return ee_id
 
     async def get_ee_ssh_public__key(
