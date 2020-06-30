@@ -241,7 +241,7 @@ class N2VCJujuConnector(N2VCConnector):
         models = await self.libjuju.list_models(contains=ns_id)
 
         for m in models:
-            status[m] = self.libjuju.get_model_status(m)
+            status[m] = await self.libjuju.get_model_status(m)
 
         if yaml_format:
             return obj_to_yaml(status)
