@@ -70,7 +70,10 @@ class Libjuju:
 
         self.log = log or logging.getLogger("Libjuju")
         self.db = db
-        self.endpoints = self._get_api_endpoints_db() or [endpoint]
+        db_endpoints = self._get_api_endpoints_db()
+        self.endpoints = db_endpoints or [endpoint]
+        if db_endpoints is None:
+            self._update_api_endpoints_db(self.endpoints)
         self.api_proxy = api_proxy
         self.username = username
         self.password = password
