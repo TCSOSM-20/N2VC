@@ -26,6 +26,7 @@ setup(
         'juju==2.8.1',
         'paramiko',
         'pyasn1>=0.4.4',
+        'kubernetes==10.0.1'
     ],
     include_package_data=True,
     maintainer='Adam Israel',

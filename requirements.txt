@@ -16,3 +16,4 @@ git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common
 juju==2.8.1
 paramiko
 pyasn1>=0.4.4
+kubernetes==10.0.1
