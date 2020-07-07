@@ -29,6 +29,8 @@ from n2vc.n2vc_conn import N2VCConnector
 from n2vc.exceptions import (
     JujuMachineNotFound,
     JujuApplicationNotFound,
+    JujuLeaderUnitNotFound,
+    JujuActionNotFound,
     JujuModelAlreadyExists,
     JujuControllerFailedConnecting,
     JujuApplicationExists,
@@ -298,7 +300,7 @@ class Libjuju:
                             machine_id, model_name
                         )
                     )
-                    machine = model.machines[machine_id]
+                    machine = machines[machine_id]
                 else:
                     raise JujuMachineNotFound("Machine {} not found".format(machine_id))
 
@@ -570,7 +572,6 @@ class Libjuju:
 
         :param: application_name:   Application name
         :param: model_name:         Model name
-        :param: cloud_name:         Cloud name
         :param: action_name:        Name of the action
         :param: db_dict:            Dictionary with data of the DB to write the updates
         :param: progress_timeout:   Maximum time between two updates in the model
@@ -601,12 +602,12 @@ class Libjuju:
                 if await u.is_leader_from_status():
                     unit = u
             if unit is None:
-                raise Exception("Cannot execute action: leader unit not found")
+                raise JujuLeaderUnitNotFound("Cannot execute action: leader unit not found")
 
             actions = await application.get_actions()
 
             if action_name not in actions:
-                raise Exception(
+                raise JujuActionNotFound(
                     "Action {} not in available actions".format(action_name)
                 )
 
@@ -637,8 +638,6 @@ class Libjuju:
                     action_name, action.status, application_name, model_name
                 )
             )
-        except Exception as e:
-            raise e
         finally:
             await self.disconnect_model(model)
             await self.disconnect_controller(controller)
@@ -819,7 +818,7 @@ class Libjuju:
         """
         machines = await model.get_machines()
         if machine_id in machines:
-            machine = model.machines[machine_id]
+            machine = machines[machine_id]
             await machine.destroy(force=True)
             # max timeout
             end = time.time() + total_timeout

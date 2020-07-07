@@ -33,6 +33,14 @@ class JujuApplicationNotFound(Exception):
     """The Application cannot be found."""
 
 
+class JujuLeaderUnitNotFound(Exception):
+    """The Application cannot be found."""
+
+
+class JujuActionNotFound(Exception):
+    """The Action cannot be found."""
+
+
 class JujuMachineNotFound(Exception):
     """The machine cannot be found."""
 
