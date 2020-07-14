@@ -280,40 +280,39 @@ class K8sHelmConnector(K8sConnector):
     ) -> bool:
 
         namespace, cluster_id = self._get_namespace_cluster_id(cluster_uuid)
-        self.log.debug(
-            "Resetting K8s environment. cluster uuid: {}".format(cluster_id)
-        )
+        self.log.debug("Resetting K8s environment. cluster uuid: {} uninstall={}"
+                       .format(cluster_id, uninstall_sw))
 
         # get kube and helm directories
         _kube_dir, helm_dir, config_filename, _cluster_dir = self._get_paths(
             cluster_name=cluster_id, create_if_not_exist=False
         )
 
-        # uninstall releases if needed
-        releases = await self.instances_list(cluster_uuid=cluster_uuid)
-        if len(releases) > 0:
-            if force:
-                for r in releases:
-                    try:
-                        kdu_instance = r.get("Name")
-                        chart = r.get("Chart")
-                        self.log.debug(
-                            "Uninstalling {} -> {}".format(chart, kdu_instance)
-                        )
-                        await self.uninstall(
-                            cluster_uuid=cluster_uuid, kdu_instance=kdu_instance
-                        )
-                    except Exception as e:
-                        self.log.error(
-                            "Error uninstalling release {}: {}".format(kdu_instance, e)
-                        )
-            else:
-                msg = (
-                    "Cluster has releases and not force. Cannot reset K8s "
-                    "environment. Cluster uuid: {}"
-                ).format(cluster_id)
-                self.log.error(msg)
-                raise K8sException(msg)
+        # uninstall releases if needed.
+        if uninstall_sw:
+            releases = await self.instances_list(cluster_uuid=cluster_uuid)
+            if len(releases) > 0:
+                if force:
+                    for r in releases:
+                        try:
+                            kdu_instance = r.get("Name")
+                            chart = r.get("Chart")
+                            self.log.debug(
+                                "Uninstalling {} -> {}".format(chart, kdu_instance)
+                            )
+                            await self.uninstall(
+                                cluster_uuid=cluster_uuid, kdu_instance=kdu_instance
+                            )
+                        except Exception as e:
+                            self.log.error(
+                                "Error uninstalling release {}: {}".format(kdu_instance, e)
+                            )
+                else:
+                    msg = (
+                        "Cluster uuid: {} has releases and not force. Leaving K8s helm environment"
+                    ).format(cluster_id)
+                    self.log.warn(msg)
+                    uninstall_sw = False  # Allow to remove k8s cluster without removing Tiller
 
         if uninstall_sw:
 
