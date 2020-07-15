@@ -142,7 +142,7 @@ class N2VCConnector(abc.ABC, Loggable):
         # Find the path where we expect our key lives (~/.ssh)
         homedir = os.environ.get("HOME")
         if not homedir:
-            self.warning("No HOME environment variable, using /tmp")
+            self.log.warning("No HOME environment variable, using /tmp")
             homedir = "/tmp"
         sshdir = "{}/.ssh".format(homedir)
         if not os.path.exists(sshdir):
