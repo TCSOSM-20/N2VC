@@ -23,7 +23,7 @@ setup(
     packages=find_packages(
         exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     install_requires=[
-        'juju==2.8.1',
+        'juju==2.8.2',
         'paramiko',
         'pyasn1>=0.4.4',
         'kubernetes==10.0.1'
