@@ -166,14 +166,14 @@ class N2VCJujuConnector(N2VCConnector):
         if self.ca_cert:
             self.ca_cert = base64_to_cacert(vca_config["ca_cert"])
 
-        if "api_proxy" in vca_config:
+        if "api_proxy" in vca_config and vca_config["api_proxy"] != "":
             self.api_proxy = vca_config["api_proxy"]
             self.log.debug(
                 "api_proxy for native charms configured: {}".format(self.api_proxy)
             )
         else:
             self.warning(
-                "api_proxy is not configured. Support for native charms is disabled"
+                "api_proxy is not configured"
             )
             self.api_proxy = None
 
@@ -377,10 +377,6 @@ class N2VCJujuConnector(N2VCConnector):
 
         # register machine on juju
         try:
-            if not self.api_proxy:
-                msg = "Cannot provision machine: api_proxy is not defined"
-                self.log.error(msg=msg)
-                raise N2VCException(message=msg)
             if not await self.libjuju.model_exists(model_name):
                 await self.libjuju.add_model(model_name, cloud_name=self.cloud)
             machine_id = await self.libjuju.provision_machine(
@@ -1188,7 +1184,7 @@ class N2VCJujuConnector(N2VCConnector):
                 connection=connection,
                 nonce=params.nonce,
                 machine_id=machine_id,
-                api=self.api_proxy,
+                proxy=self.api_proxy,
             )
         )
 

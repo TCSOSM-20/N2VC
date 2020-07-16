@@ -946,14 +946,13 @@ class K8sJujuConnector(K8sConnector):
         :param credentials dict: A dictionary containing the k8s credentials
         :returns: A boolean if the cluster is running locally
         """
-        creds = yaml.safe_load(credentials)
-        if os.getenv("OSMLCM_VCA_APIPROXY"):
-            host_ip = os.getenv("OSMLCM_VCA_APIPROXY")
 
-        if creds and host_ip:
+        creds = yaml.safe_load(credentials)
+
+        if creds and os.getenv("OSMLCM_VCA_APIPROXY"):
             for cluster in creds["clusters"]:
                 if "server" in cluster["cluster"]:
-                    if host_ip in cluster["cluster"]["server"]:
+                    if os.getenv("OSMLCM_VCA_APIPROXY") in cluster["cluster"]["server"]:
                         return True
 
         return False

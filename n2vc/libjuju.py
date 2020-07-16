@@ -408,7 +408,7 @@ class Libjuju:
                     connection=connection,
                     nonce=params.nonce,
                     machine_id=machine_id,
-                    api=self.api_proxy,
+                    proxy=self.api_proxy,
                 )
             )
 

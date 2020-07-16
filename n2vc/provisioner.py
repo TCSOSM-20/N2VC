@@ -63,7 +63,7 @@ temp=$(mktemp)
 echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > $temp
 install -m 0440 $temp /etc/sudoers.d/90-juju-ubuntu
 rm $temp
-su ubuntu -c 'install -D -m 0600 /dev/null ~/.ssh/authorized_keys'
+su ubuntu -c '[ -f ~/.ssh/authorized_keys ] || install -D -m 0600 /dev/null ~/.ssh/authorized_keys'
 export authorized_keys="{}"
 if [ ! -z "$authorized_keys" ]; then
     su ubuntu -c 'echo $authorized_keys >> ~/.ssh/authorized_keys'
@@ -254,12 +254,12 @@ class AsyncSSHProvisioner:
 
         return params
 
-    async def install_agent(self, connection, nonce, machine_id, api):
+    async def install_agent(self, connection, nonce, machine_id, proxy=None):
         """
         :param object connection: Connection to Juju API
         :param str nonce: The nonce machine specification
         :param str machine_id: The id assigned to the machine
-        :param str api: IP of the API_PROXY
+        :param str proxy: IP of the API_PROXY
 
         :return: bool: If the initialization was successful
         """
@@ -288,39 +288,40 @@ class AsyncSSHProvisioner:
             - 127.0.0.1:17070
             - '[::1]:17070'
         """
-        m = re.search(r"apiaddresses:\n- (\d+\.\d+\.\d+\.\d+):17070", results.script)
-        apiaddress = m.group(1)
+        if proxy:
+            m = re.search(r"apiaddresses:\n- (\d+\.\d+\.\d+\.\d+):17070", results.script)
+            apiaddress = m.group(1)
 
-        """Add IP Table rule
+            """Add IP Table rule
 
-        In order to route the traffic to the private ip of the Juju controller
-        we use a DNAT rule to tell the machine that the destination for the
-        private address is the public address of the machine where the Juju
-        controller is running in LXD. That machine will have a complimentary
-        iptables rule, routing traffic to the appropriate LXD container.
-        """
+            In order to route the traffic to the private ip of the Juju controller
+            we use a DNAT rule to tell the machine that the destination for the
+            private address is the public address of the machine where the Juju
+            controller is running in LXD. That machine will have a complimentary
+            iptables rule, routing traffic to the appropriate LXD container.
+            """
 
-        script = IPTABLES_SCRIPT.format(apiaddress, api)
+            script = IPTABLES_SCRIPT.format(apiaddress, proxy)
 
-        # Run this in a retry loop, because dpkg may be running and cause the
-        # script to fail.
-        retry = 10
-        attempts = 0
-        delay = 15
+            # Run this in a retry loop, because dpkg may be running and cause the
+            # script to fail.
+            retry = 10
+            attempts = 0
+            delay = 15
 
-        while attempts <= retry:
-            try:
-                attempts += 1
-                stdout, stderr = await self._run_configure_script(script)
-                break
-            except Exception as e:
-                self.log.debug("Waiting for dpkg, sleeping {} seconds".format(delay))
-                if attempts > retry:
-                    raise e
-                else:
-                    await asyncio.sleep(delay)
-                    # Slowly back off the retry
-                    delay += 15
+            while attempts <= retry:
+                try:
+                    attempts += 1
+                    stdout, stderr = await self._run_configure_script(script)
+                    break
+                except Exception as e:
+                    self.log.debug("Waiting for dpkg, sleeping {} seconds".format(delay))
+                    if attempts > retry:
+                        raise e
+                    else:
+                        await asyncio.sleep(delay)
+                        # Slowly back off the retry
+                        delay += 15
 
         # self.log.debug("Running configure script")
         await self._run_configure_script(results.script)
