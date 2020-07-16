@@ -124,79 +124,66 @@ class K8sJujuConnector(K8sConnector):
         # reuse_cluster_uuid, e.g. to try to fix it.       #
         ###################################################
 
-        if not reuse_cluster_uuid:
-            # This is a new cluster, so bootstrap it
+        # This is a new cluster, so bootstrap it
 
-            cluster_uuid = str(uuid.uuid4())
+        cluster_uuid = reuse_cluster_uuid or str(uuid.uuid4())
 
-            # Is a local k8s cluster?
-            localk8s = self.is_local_k8s(k8s_creds)
+        # Is a local k8s cluster?
+        localk8s = self.is_local_k8s(k8s_creds)
 
-            # If the k8s is external, the juju controller needs a loadbalancer
-            loadbalancer = False if localk8s else True
+        # If the k8s is external, the juju controller needs a loadbalancer
+        loadbalancer = False if localk8s else True
 
-            # Name the new k8s cloud
-            k8s_cloud = "k8s-{}".format(cluster_uuid)
+        # Name the new k8s cloud
+        k8s_cloud = "k8s-{}".format(cluster_uuid)
 
-            self.log.debug("Adding k8s cloud {}".format(k8s_cloud))
-            await self.add_k8s(k8s_cloud, k8s_creds)
+        self.log.debug("Adding k8s cloud {}".format(k8s_cloud))
+        await self.add_k8s(k8s_cloud, k8s_creds)
 
-            # Bootstrap Juju controller
-            self.log.debug("Bootstrapping...")
-            await self.bootstrap(k8s_cloud, cluster_uuid, loadbalancer)
-            self.log.debug("Bootstrap done.")
+        # Bootstrap Juju controller
+        self.log.debug("Bootstrapping...")
+        await self.bootstrap(k8s_cloud, cluster_uuid, loadbalancer)
+        self.log.debug("Bootstrap done.")
 
-            # Get the controller information
+        # Get the controller information
 
-            # Parse ~/.local/share/juju/controllers.yaml
-            # controllers.testing.api-endpoints|ca-cert|uuid
-            self.log.debug("Getting controller endpoints")
-            with open(os.path.expanduser("~/.local/share/juju/controllers.yaml")) as f:
-                controllers = yaml.load(f, Loader=yaml.Loader)
-                controller = controllers["controllers"][cluster_uuid]
-                endpoints = controller["api-endpoints"]
-                self.juju_endpoint = endpoints[0]
-                self.juju_ca_cert = controller["ca-cert"]
+        # Parse ~/.local/share/juju/controllers.yaml
+        # controllers.testing.api-endpoints|ca-cert|uuid
+        self.log.debug("Getting controller endpoints")
+        with open(os.path.expanduser("~/.local/share/juju/controllers.yaml")) as f:
+            controllers = yaml.load(f, Loader=yaml.Loader)
+            controller = controllers["controllers"][cluster_uuid]
+            endpoints = controller["api-endpoints"]
+            self.juju_endpoint = endpoints[0]
+            self.juju_ca_cert = controller["ca-cert"]
 
-            # Parse ~/.local/share/juju/accounts
-            # controllers.testing.user|password
-            self.log.debug("Getting accounts")
-            with open(os.path.expanduser("~/.local/share/juju/accounts.yaml")) as f:
-                controllers = yaml.load(f, Loader=yaml.Loader)
-                controller = controllers["controllers"][cluster_uuid]
+        # Parse ~/.local/share/juju/accounts
+        # controllers.testing.user|password
+        self.log.debug("Getting accounts")
+        with open(os.path.expanduser("~/.local/share/juju/accounts.yaml")) as f:
+            controllers = yaml.load(f, Loader=yaml.Loader)
+            controller = controllers["controllers"][cluster_uuid]
 
-                self.juju_user = controller["user"]
-                self.juju_secret = controller["password"]
+            self.juju_user = controller["user"]
+            self.juju_secret = controller["password"]
 
-            # raise Exception("EOL")
+        # raise Exception("EOL")
 
-            self.juju_public_key = None
+        self.juju_public_key = None
 
-            config = {
-                "endpoint": self.juju_endpoint,
-                "username": self.juju_user,
-                "secret": self.juju_secret,
-                "cacert": self.juju_ca_cert,
-                "namespace": namespace,
-                "loadbalancer": loadbalancer,
-            }
+        config = {
+            "endpoint": self.juju_endpoint,
+            "username": self.juju_user,
+            "secret": self.juju_secret,
+            "cacert": self.juju_ca_cert,
+            "namespace": namespace,
+            "loadbalancer": loadbalancer,
+        }
 
-            # Store the cluster configuration so it
-            # can be used for subsequent calls
-            self.log.debug("Setting config")
-            await self.set_config(cluster_uuid, config)
-
-        else:
-            # This is an existing cluster, so get its config
-            cluster_uuid = reuse_cluster_uuid
-
-            config = self.get_config(cluster_uuid)
-
-            self.juju_endpoint = config["endpoint"]
-            self.juju_user = config["username"]
-            self.juju_secret = config["secret"]
-            self.juju_ca_cert = config["cacert"]
-            self.juju_public_key = None
+        # Store the cluster configuration so it
+        # can be used for subsequent calls
+        self.log.debug("Setting config")
+        await self.set_config(cluster_uuid, config)
 
         # Login to the k8s cluster
         if not self.authenticated:

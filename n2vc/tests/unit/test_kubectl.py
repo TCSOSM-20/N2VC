@@ -34,13 +34,15 @@ fake_list_services = Dict(
                             "cluster_ip": "10.152.183.79",
                             "type": "LoadBalancer",
                             "ports": [
-                                {
-                                    "name": None,
-                                    "node_port": None,
-                                    "port": 30666,
-                                    "protocol": "TCP",
-                                    "target_port": 30666,
-                                }
+                                Dict(
+                                    {
+                                        "name": None,
+                                        "node_port": None,
+                                        "port": 30666,
+                                        "protocol": "TCP",
+                                        "target_port": 30666,
+                                    }
+                                )
                             ],
                         }
                     ),

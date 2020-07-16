@@ -37,7 +37,16 @@ class Kubectl:
                     "name": i.metadata.name,
                     "cluster_ip": i.spec.cluster_ip,
                     "type": i.spec.type,
-                    "ports": i.spec.ports,
+                    "ports": [
+                        {
+                            "name": p.name,
+                            "node_port": p.node_port,
+                            "port": p.port,
+                            "protocol": p.protocol,
+                            "target_port": p.target_port,
+                        }
+                        for p in i.spec.ports
+                    ],
                     "external_ip": [i.ip for i in i.status.load_balancer.ingress]
                     if i.status.load_balancer.ingress
                     else None,
