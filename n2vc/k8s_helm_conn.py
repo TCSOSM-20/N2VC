@@ -837,6 +837,7 @@ class K8sHelmConnector(K8sConnector):
                            kdu_instance: str,
                            namespace: str) -> list:
 
+        _, cluster_id = self._get_namespace_cluster_id(cluster_uuid)
         self.log.debug(
             "get_services: cluster_uuid: {}, kdu_instance: {}".format(
                 cluster_uuid, kdu_instance
@@ -844,7 +845,7 @@ class K8sHelmConnector(K8sConnector):
         )
 
         status = await self._status_kdu(
-            cluster_uuid, kdu_instance, return_text=False
+            cluster_id, kdu_instance, return_text=False
         )
 
         service_names = self._parse_helm_status_service_info(status)
@@ -866,8 +867,9 @@ class K8sHelmConnector(K8sConnector):
         )
 
         # get paths
+        _, cluster_id = self._get_namespace_cluster_id(cluster_uuid)
         _kube_dir, helm_dir, config_filename, _cluster_dir = self._get_paths(
-            cluster_name=cluster_uuid, create_if_not_exist=True
+            cluster_name=cluster_id, create_if_not_exist=True
         )
 
         command = "{} --kubeconfig={} --namespace={} get service {} -o=yaml".format(

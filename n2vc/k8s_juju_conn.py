@@ -758,6 +758,7 @@ class K8sJujuConnector(K8sConnector):
         self.log.debug(
             "Adding model '{}' to cluster_uuid '{}'".format(model_name, cluster_uuid)
         )
+        model = None
         try:
             if self.juju_public_key is not None:
                 model = await self.controller.add_model(
