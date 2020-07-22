@@ -46,7 +46,9 @@ class Kubectl:
                             "target_port": p.target_port,
                         }
                         for p in i.spec.ports
-                    ],
+                    ]
+                    if i.spec.ports
+                    else [],
                     "external_ip": [i.ip for i in i.status.load_balancer.ingress]
                     if i.status.load_balancer.ingress
                     else None,
