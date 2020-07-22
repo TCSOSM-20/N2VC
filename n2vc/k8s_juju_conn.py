@@ -683,7 +683,16 @@ class K8sJujuConnector(K8sConnector):
     ) -> list:
         """Return a list of services of a kdu_instance"""
 
-        config_file = self.get_config_file(cluster_uuid=cluster_uuid)
+        credentials = self.get_credentials(cluster_uuid=cluster_uuid)
+
+        config_path = "/tmp/{}".format(cluster_uuid)
+        config_file = "{}/config".format(config_path)
+
+        if not os.path.exists(config_path):
+            os.makedirs(config_path)
+        with open(config_file, "w") as f:
+            f.write(credentials)
+
         kubectl = Kubectl(config_file=config_file)
         return kubectl.get_services(
             field_selector="metadata.namespace={}".format(kdu_instance)
@@ -694,7 +703,16 @@ class K8sJujuConnector(K8sConnector):
     ) -> object:
         """Return data for a specific service inside a namespace"""
 
-        config_file = self.get_config_file(cluster_uuid=cluster_uuid)
+        credentials = self.get_credentials(cluster_uuid=cluster_uuid)
+
+        config_path = "/tmp/{}".format(cluster_uuid)
+        config_file = "{}/config".format(config_path)
+
+        if not os.path.exists(config_path):
+            os.makedirs(config_path)
+        with open(config_file, "w") as f:
+            f.write(credentials)
+
         kubectl = Kubectl(config_file=config_file)
 
         return kubectl.get_services(
@@ -851,11 +869,23 @@ class K8sJujuConnector(K8sConnector):
             if "already exists" not in stderr:
                 raise Exception(stderr)
 
-    def get_config_file(self, cluster_uuid: str) -> str:
+    def get_credentials(self, cluster_uuid: str) -> str:
         """
-        Get Cluster Kubeconfig location
+        Get Cluster Kubeconfig
         """
-        return "{}/{}/.kube/config".format(self.fs.path, cluster_uuid)
+        k8scluster = self.db.get_one(
+            "k8sclusters", q_filter={"_id": cluster_uuid}, fail_on_empty=False
+        )
+
+        self.db.encrypt_decrypt_fields(
+            k8scluster.get("credentials"),
+            "decrypt",
+            ["password", "secret"],
+            schema_version=k8scluster["schema_version"],
+            salt=k8scluster["_id"],
+        )
+
+        return yaml.safe_dump(k8scluster.get("credentials"))
 
     def get_config(self, cluster_uuid: str,) -> dict:
         """Get the cluster configuration
