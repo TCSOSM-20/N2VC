@@ -18,13 +18,12 @@ import os
 import uuid
 import yaml
 
-import juju
 from juju.controller import Controller
 from juju.model import Model
 from n2vc.exceptions import K8sException
 from n2vc.k8s_conn import K8sConnector
 from n2vc.kubectl import Kubectl
-from .exceptions import MethodNotImplemented
+from .exceptions import MethodNotImplemented, N2VCNotFound
 
 
 # from juju.bundle import BundleHandler
@@ -57,13 +56,14 @@ class K8sJujuConnector(K8sConnector):
         self.fs = fs
         self.log.debug("Initializing K8S Juju connector")
 
-        self.authenticated = False
-        self.models = {}
-
         self.juju_command = juju_command
-        self.juju_secret = ""
+        self.juju_public_key = None
 
         self.log.debug("K8S Juju connector initialized")
+        # TODO: Remove these commented lines:
+        # self.authenticated = False
+        # self.models = {}
+        # self.juju_secret = ""
 
     """Initialization"""
 
@@ -154,8 +154,8 @@ class K8sJujuConnector(K8sConnector):
             controllers = yaml.load(f, Loader=yaml.Loader)
             controller = controllers["controllers"][cluster_uuid]
             endpoints = controller["api-endpoints"]
-            self.juju_endpoint = endpoints[0]
-            self.juju_ca_cert = controller["ca-cert"]
+            juju_endpoint = endpoints[0]
+            juju_ca_cert = controller["ca-cert"]
 
         # Parse ~/.local/share/juju/accounts
         # controllers.testing.user|password
@@ -164,19 +164,14 @@ class K8sJujuConnector(K8sConnector):
             controllers = yaml.load(f, Loader=yaml.Loader)
             controller = controllers["controllers"][cluster_uuid]
 
-            self.juju_user = controller["user"]
-            self.juju_secret = controller["password"]
-
-        # raise Exception("EOL")
-
-        self.juju_public_key = None
+            juju_user = controller["user"]
+            juju_secret = controller["password"]
 
         config = {
-            "endpoint": self.juju_endpoint,
-            "username": self.juju_user,
-            "secret": self.juju_secret,
-            "cacert": self.juju_ca_cert,
-            "namespace": namespace,
+            "endpoint": juju_endpoint,
+            "username": juju_user,
+            "secret": juju_secret,
+            "cacert": juju_ca_cert,
             "loadbalancer": loadbalancer,
         }
 
@@ -185,9 +180,16 @@ class K8sJujuConnector(K8sConnector):
         self.log.debug("Setting config")
         await self.set_config(cluster_uuid, config)
 
+        # Test connection
+        controller = await self.get_controller(cluster_uuid)
+        await controller.disconnect()
+
+        # TODO: Remove these commented lines
+        # raise Exception("EOL")
+        # self.juju_public_key = None
         # Login to the k8s cluster
-        if not self.authenticated:
-            await self.login(cluster_uuid)
+        # if not self.authenticated:
+        #     await self.login(cluster_uuid)
 
         # We're creating a new cluster
         # print("Getting model {}".format(self.get_namespace(cluster_uuid),
@@ -238,32 +240,46 @@ class K8sJujuConnector(K8sConnector):
         """
 
         try:
-            if not self.authenticated:
-                await self.login(cluster_uuid)
 
-            if self.controller.is_connected():
-                # Destroy the model
-                namespace = self.get_namespace(cluster_uuid)
-                if await self.has_model(namespace):
-                    self.log.debug("[reset] Destroying model")
-                    await self.controller.destroy_model(namespace, destroy_storage=True)
+            # Remove k8scluster from database
+            self.log.debug("[reset] Removing k8scluster from juju database")
+            juju_db = self.db.get_one("admin", {"_id": "juju"})
 
-                # Disconnect from the controller
-                self.log.debug("[reset] Disconnecting controller")
-                await self.logout()
+            for k in juju_db["k8sclusters"]:
+                if k["_id"] == cluster_uuid:
+                    juju_db["k8sclusters"].remove(k)
+                    self.db.set_one(
+                        table="admin",
+                        q_filter={"_id": "juju"},
+                        update_dict={"k8sclusters": juju_db["k8sclusters"]},
+                    )
+                    break
 
-                # Destroy the controller (via CLI)
-                self.log.debug("[reset] Destroying controller")
-                await self.destroy_controller(cluster_uuid)
+            # Destroy the controller (via CLI)
+            self.log.debug("[reset] Destroying controller")
+            await self.destroy_controller(cluster_uuid)
 
-                self.log.debug("[reset] Removing k8s cloud")
-                k8s_cloud = "k8s-{}".format(cluster_uuid)
-                await self.remove_cloud(k8s_cloud)
+            self.log.debug("[reset] Removing k8s cloud")
+            k8s_cloud = "k8s-{}".format(cluster_uuid)
+            await self.remove_cloud(k8s_cloud)
 
         except Exception as ex:
             self.log.debug("Caught exception during reset: {}".format(ex))
-
         return True
+        # TODO: Remove these commented lines
+        #     if not self.authenticated:
+        #         await self.login(cluster_uuid)
+
+        #     if self.controller.is_connected():
+        #         # Destroy the model
+        #         namespace = self.get_namespace(cluster_uuid)
+        #         if await self.has_model(namespace):
+        #             self.log.debug("[reset] Destroying model")
+        #             await self.controller.destroy_model(namespace, destroy_storage=True)
+
+        #         # Disconnect from the controller
+        #         self.log.debug("[reset] Disconnecting controller")
+        #         await self.logout()
 
     """Deployment"""
 
@@ -293,9 +309,7 @@ class K8sJujuConnector(K8sConnector):
         :return: If successful, returns ?
         """
 
-        if not self.authenticated:
-            self.log.debug("[install] Logging in to the controller")
-            await self.login(cluster_uuid)
+        controller = await self.get_controller(cluster_uuid)
 
         ##
         # Get or create the model, based on the NS
@@ -309,7 +323,9 @@ class K8sJujuConnector(K8sConnector):
 
         # Create the new model
         self.log.debug("Adding model: {}".format(kdu_instance))
-        model = await self.add_model(kdu_instance, cluster_uuid=cluster_uuid)
+        model = await self.add_model(
+            kdu_instance, cluster_uuid=cluster_uuid, controller=controller
+        )
 
         if model:
             # TODO: Instantiation parameters
@@ -380,7 +396,7 @@ class K8sJujuConnector(K8sConnector):
             if model.is_connected():
                 self.log.debug("[install] Disconnecting model")
                 await model.disconnect()
-
+            await controller.disconnect()
             os.chdir(previous_workdir)
 
             return kdu_instance
@@ -426,49 +442,60 @@ class K8sJujuConnector(K8sConnector):
         storage would require a redeployment of the service, at least in this
         initial release.
         """
-        namespace = self.get_namespace(cluster_uuid)
-        model = await self.get_model(namespace, cluster_uuid=cluster_uuid)
-
-        with open(kdu_model, "r") as f:
-            bundle = yaml.safe_load(f)
-
-            """
-            {
-                'description': 'Test bundle',
-                'bundle': 'kubernetes',
-                'applications': {
-                    'mariadb-k8s': {
-                        'charm': 'cs:~charmed-osm/mariadb-k8s-20',
-                        'scale': 1,
-                        'options': {
-                            'password': 'manopw',
-                            'root_password': 'osm4u',
-                            'user': 'mano'
-                        },
-                        'series': 'kubernetes'
-                    }
-                }
-            }
-            """
-            # TODO: This should be returned in an agreed-upon format
-            for name in bundle["applications"]:
-                self.log.debug(model.applications)
-                application = model.applications[name]
-                self.log.debug(application)
-
-                path = bundle["applications"][name]["charm"]
-
-                try:
-                    await application.upgrade_charm(switch=path)
-                except juju.errors.JujuError as ex:
-                    if "already running charm" in str(ex):
-                        # We're already running this version
-                        pass
-
-        await model.disconnect()
-
-        return True
         raise MethodNotImplemented()
+        # TODO: Remove these commented lines
+
+        # model = await self.get_model(namespace, cluster_uuid=cluster_uuid)
+
+        # model = None
+        # namespace = self.get_namespace(cluster_uuid)
+        # controller = await self.get_controller(cluster_uuid)
+
+        # try:
+        #     if namespace not in await controller.list_models():
+        #         raise N2VCNotFound(message="Model {} does not exist".format(namespace))
+
+        #     model = await controller.get_model(namespace)
+        #     with open(kdu_model, "r") as f:
+        #         bundle = yaml.safe_load(f)
+
+        #         """
+        #         {
+        #             'description': 'Test bundle',
+        #             'bundle': 'kubernetes',
+        #             'applications': {
+        #                 'mariadb-k8s': {
+        #                     'charm': 'cs:~charmed-osm/mariadb-k8s-20',
+        #                     'scale': 1,
+        #                     'options': {
+        #                         'password': 'manopw',
+        #                         'root_password': 'osm4u',
+        #                         'user': 'mano'
+        #                     },
+        #                     'series': 'kubernetes'
+        #                 }
+        #             }
+        #         }
+        #         """
+        #         # TODO: This should be returned in an agreed-upon format
+        #         for name in bundle["applications"]:
+        #             self.log.debug(model.applications)
+        #             application = model.applications[name]
+        #             self.log.debug(application)
+
+        #             path = bundle["applications"][name]["charm"]
+
+        #             try:
+        #                 await application.upgrade_charm(switch=path)
+        #             except juju.errors.JujuError as ex:
+        #                 if "already running charm" in str(ex):
+        #                     # We're already running this version
+        #                     pass
+        # finally:
+        #     if model:
+        #         await model.disconnect()
+        #     await controller.disconnect()
+        # return True
 
     """Rollback"""
 
@@ -497,18 +524,21 @@ class K8sJujuConnector(K8sConnector):
 
         :return: Returns True if successful, or raises an exception
         """
-        if not self.authenticated:
-            self.log.debug("[uninstall] Connecting to controller")
-            await self.login(cluster_uuid)
+
+        controller = await self.get_controller(cluster_uuid)
 
         self.log.debug("[uninstall] Destroying model")
 
-        await self.controller.destroy_models(kdu_instance)
+        await controller.destroy_models(kdu_instance)
 
         self.log.debug("[uninstall] Model destroyed and disconnecting")
-        await self.logout()
+        await controller.disconnect()
 
         return True
+        # TODO: Remove these commented lines
+        # if not self.authenticated:
+        #     self.log.debug("[uninstall] Connecting to controller")
+        #     await self.login(cluster_uuid)
 
     async def exec_primitive(
         self,
@@ -530,9 +560,8 @@ class K8sJujuConnector(K8sConnector):
 
         :return: Returns the output of the action
         """
-        if not self.authenticated:
-            self.log.debug("[exec_primitive] Connecting to controller")
-            await self.login(cluster_uuid)
+
+        controller = await self.get_controller(cluster_uuid)
 
         if not params or "application-name" not in params:
             raise K8sException(
@@ -545,7 +574,7 @@ class K8sJujuConnector(K8sConnector):
                 "kdu_instance: {}".format(kdu_instance)
             )
 
-            model = await self.get_model(kdu_instance, cluster_uuid)
+            model = await self.get_model(kdu_instance, controller=controller)
 
             application_name = params["application-name"]
             application = model.applications[application_name]
@@ -584,6 +613,12 @@ class K8sJujuConnector(K8sConnector):
             error_msg = "Error executing primitive {}: {}".format(primitive_name, e)
             self.log.error(error_msg)
             raise K8sException(message=error_msg)
+        finally:
+            await controller.disconnect()
+        # TODO: Remove these commented lines:
+        # if not self.authenticated:
+        #     self.log.debug("[exec_primitive] Connecting to controller")
+        #     await self.login(cluster_uuid)
 
     """Introspection"""
 
@@ -659,22 +694,18 @@ class K8sJujuConnector(K8sConnector):
                  and deployment_time.
         """
         status = {}
+        controller = await self.get_controller(cluster_uuid)
+        model = await self.get_model(kdu_instance, controller=controller)
 
-        model = await self.get_model(
-            self.get_namespace(cluster_uuid), cluster_uuid=cluster_uuid
-        )
+        model_status = await model.get_status()
+        status = model_status.applications
 
-        # model = await self.get_model_by_uuid(cluster_uuid)
-        if model:
-            model_status = await model.get_status()
-            status = model_status.applications
+        for name in model_status.applications:
+            application = model_status.applications[name]
+            status[name] = {"status": application["status"]["status"]}
 
-            for name in model_status.applications:
-                application = model_status.applications[name]
-                status[name] = {"status": application["status"]["status"]}
-
-            if model.is_connected():
-                await model.disconnect()
+        await model.disconnect()
+        await controller.disconnect()
 
         return status
 
@@ -761,17 +792,19 @@ class K8sJujuConnector(K8sConnector):
 
         return True
 
-    async def add_model(self, model_name: str, cluster_uuid: str,) -> Model:
+    async def add_model(
+        self, model_name: str, cluster_uuid: str, controller: Controller
+    ) -> Model:
         """Adds a model to the controller
 
         Adds a new model to the Juju controller
 
         :param model_name str: The name of the model to add.
+        :param cluster_uuid str: ID of the cluster.
+        :param controller: Controller object in which the model will be added
         :returns: The juju.model.Model object of the new model upon success or
                   raises an exception.
         """
-        if not self.authenticated:
-            await self.login(cluster_uuid)
 
         self.log.debug(
             "Adding model '{}' to cluster_uuid '{}'".format(model_name, cluster_uuid)
@@ -779,11 +812,11 @@ class K8sJujuConnector(K8sConnector):
         model = None
         try:
             if self.juju_public_key is not None:
-                model = await self.controller.add_model(
+                model = await controller.add_model(
                     model_name, config={"authorized-keys": self.juju_public_key}
                 )
             else:
-                model = await self.controller.add_model(model_name)
+                model = await controller.add_model(model_name)
         except Exception as ex:
             self.log.debug(ex)
             self.log.debug("Caught exception: {}".format(ex))
@@ -895,34 +928,42 @@ class K8sJujuConnector(K8sConnector):
         :param cluster_uuid str: The UUID of the cluster.
         :return: A dict upon success, or raises an exception.
         """
-        cluster_config = "{}/{}.yaml".format(self.fs.path, cluster_uuid)
-        if os.path.exists(cluster_config):
-            with open(cluster_config, "r") as f:
-                config = yaml.safe_load(f.read())
-                return config
-        else:
+
+        juju_db = self.db.get_one("admin", {"_id": "juju"})
+        config = None
+        for k in juju_db["k8sclusters"]:
+            if k["_id"] == cluster_uuid:
+                config = k["config"]
+                self.db.encrypt_decrypt_fields(
+                    config,
+                    "decrypt",
+                    ["secret", "cacert"],
+                    schema_version="1.1",
+                    salt=k["_id"],
+                )
+                break
+        if not config:
             raise Exception(
                 "Unable to locate configuration for cluster {}".format(cluster_uuid)
             )
+        return config
 
-    async def get_model(self, model_name: str, cluster_uuid: str,) -> Model:
+    async def get_model(self, model_name: str, controller: Controller) -> Model:
         """Get a model from the Juju Controller.
 
         Note: Model objects returned must call disconnected() before it goes
         out of scope.
 
         :param model_name str: The name of the model to get
+        :param controller Controller: Controller object
         :return The juju.model.Model object if found, or None.
         """
-        if not self.authenticated:
-            await self.login(cluster_uuid)
 
-        model = None
-        models = await self.controller.list_models()
-        if model_name in models:
-            self.log.debug("Found model: {}".format(model_name))
-            model = await self.controller.get_model(model_name)
-        return model
+        models = await controller.list_models()
+        if model_name not in models:
+            raise N2VCNotFound("Model {} not found".format(model_name))
+        self.log.debug("Found model: {}".format(model_name))
+        return await controller.get_model(model_name)
 
     def get_namespace(self, cluster_uuid: str,) -> str:
         """Get the namespace UUID
@@ -942,19 +983,20 @@ class K8sJujuConnector(K8sConnector):
         # Consider pre/appending the cluster id to the namespace string
         return config["namespace"]
 
-    async def has_model(self, model_name: str) -> bool:
-        """Check if a model exists in the controller
+    # TODO: Remove these lines of code
+    # async def has_model(self, model_name: str) -> bool:
+    #     """Check if a model exists in the controller
 
-        Checks to see if a model exists in the connected Juju controller.
+    #     Checks to see if a model exists in the connected Juju controller.
 
-        :param model_name str: The name of the model
-        :return: A boolean indicating if the model exists
-        """
-        models = await self.controller.list_models()
+    #     :param model_name str: The name of the model
+    #     :return: A boolean indicating if the model exists
+    #     """
+    #     models = await self.controller.list_models()
 
-        if model_name in models:
-            return True
-        return False
+    #     if model_name in models:
+    #         return True
+    #     return False
 
     def is_local_k8s(self, credentials: str,) -> bool:
         """Check if a cluster is local
@@ -975,64 +1017,64 @@ class K8sJujuConnector(K8sConnector):
 
         return False
 
-    async def login(self, cluster_uuid):
+    async def get_controller(self, cluster_uuid):
         """Login to the Juju controller."""
 
-        if self.authenticated:
-            return
-
-        self.connecting = True
-
-        # Test: Make sure we have the credentials loaded
         config = self.get_config(cluster_uuid)
 
-        self.juju_endpoint = config["endpoint"]
-        self.juju_user = config["username"]
-        self.juju_secret = config["secret"]
-        self.juju_ca_cert = config["cacert"]
-        self.juju_public_key = None
+        juju_endpoint = config["endpoint"]
+        juju_user = config["username"]
+        juju_secret = config["secret"]
+        juju_ca_cert = config["cacert"]
 
-        self.controller = Controller()
+        controller = Controller()
 
-        if self.juju_secret:
+        if juju_secret:
             self.log.debug(
-                "Connecting to controller... ws://{} as {}/{}".format(
-                    self.juju_endpoint, self.juju_user, self.juju_secret,
+                "Connecting to controller... ws://{} as {}".format(
+                    juju_endpoint, juju_user,
                 )
             )
             try:
-                await self.controller.connect(
-                    endpoint=self.juju_endpoint,
-                    username=self.juju_user,
-                    password=self.juju_secret,
-                    cacert=self.juju_ca_cert,
+                await controller.connect(
+                    endpoint=juju_endpoint,
+                    username=juju_user,
+                    password=juju_secret,
+                    cacert=juju_ca_cert,
                 )
-                self.authenticated = True
                 self.log.debug("JujuApi: Logged into controller")
+                return controller
             except Exception as ex:
                 self.log.debug(ex)
                 self.log.debug("Caught exception: {}".format(ex))
-                pass
         else:
             self.log.fatal("VCA credentials not configured.")
-            self.authenticated = False
 
-    async def logout(self):
-        """Logout of the Juju controller."""
-        self.log.debug("[logout]")
-        if not self.authenticated:
-            return False
+    # TODO: Remove these commented lines
+    #         self.authenticated = False
+    # if self.authenticated:
+    #         return
 
-        for model in self.models:
-            self.log.debug("Logging out of model {}".format(model))
-            await self.models[model].disconnect()
+    #     self.connecting = True
+    #     juju_public_key = None
+    #     self.authenticated = True
+    #     Test: Make sure we have the credentials loaded
+    # async def logout(self):
+    #     """Logout of the Juju controller."""
+    #     self.log.debug("[logout]")
+    #     if not self.authenticated:
+    #         return False
 
-        if self.controller:
-            self.log.debug("Disconnecting controller {}".format(self.controller))
-            await self.controller.disconnect()
-            self.controller = None
+    #     for model in self.models:
+    #         self.log.debug("Logging out of model {}".format(model))
+    #         await self.models[model].disconnect()
 
-        self.authenticated = False
+    #     if self.controller:
+    #         self.log.debug("Disconnecting controller {}".format(self.controller))
+    #         await self.controller.disconnect()
+    #         self.controller = None
+
+    #     self.authenticated = False
 
     async def remove_cloud(self, cloud_name: str,) -> bool:
         """Remove a k8s cloud from Juju
@@ -1075,17 +1117,25 @@ class K8sJujuConnector(K8sConnector):
     async def set_config(self, cluster_uuid: str, config: dict,) -> bool:
         """Save the cluster configuration
 
-        Saves the cluster information to the file store
+        Saves the cluster information to the Mongo database
 
         :param cluster_uuid str: The UUID of the cluster
         :param config dict: A dictionary containing the cluster configuration
-        :returns: Boolean upon success or raises an exception.
         """
 
-        cluster_config = "{}/{}.yaml".format(self.fs.path, cluster_uuid)
-        if not os.path.exists(cluster_config):
-            self.log.debug("Writing config to {}".format(cluster_config))
-            with open(cluster_config, "w") as f:
-                f.write(yaml.dump(config, Dumper=yaml.Dumper))
+        juju_db = self.db.get_one("admin", {"_id": "juju"})
 
-        return True
+        k8sclusters = juju_db["k8sclusters"] if "k8sclusters" in juju_db else []
+        self.db.encrypt_decrypt_fields(
+            config,
+            "encrypt",
+            ["secret", "cacert"],
+            schema_version="1.1",
+            salt=cluster_uuid,
+        )
+        k8sclusters.append({"_id": cluster_uuid, "config": config})
+        self.db.set_one(
+            table="admin",
+            q_filter={"_id": "juju"},
+            update_dict={"k8sclusters": k8sclusters},
+        )
